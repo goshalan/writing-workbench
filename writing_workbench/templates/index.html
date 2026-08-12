@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1210">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Writing Workbench 是一个本地优先的 Markdown 与 TXT 写作工具台。">
+  <title>Writing Workbench / 写书工具台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='writing-workbench.css') }}">
+  <script defer src="{{ url_for('static', filename='writing-workbench.js') }}"></script>
+</head>
+<body>
+  <a class="skip-link" href="#chapterEditor">跳到正文编辑器</a>
+
+  <main class="workbench" aria-labelledby="appTitle">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <h1 id="appTitle">写书工具台</h1>
+        <span class="vertical-rule" aria-hidden="true"></span>
+        <p class="book-label" title="当前本地书稿">Writing Workbench</p>
+      </div>
+
+      <div class="save-state is-saved" id="saveState" role="status" aria-live="polite">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span id="saveStateText">已保存 · 手动保存</span>
+      </div>
+
+      <div class="topbar-actions" aria-label="编辑操作">
+        <button class="toolbar-button" id="undoButton" type="button" title="撤销（⌘/Ctrl + Z）" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6"/></svg>
+          <span>撤销</span>
+        </button>
+        <button class="toolbar-button" id="redoButton" type="button" title="重做（⇧⌘/Ctrl + Z）" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5m4-5h-8a6 6 0 0 0-6 6"/></svg>
+          <span>重做</span>
+        </button>
+        <button class="toolbar-button danger-button" id="deleteButton" type="button" title="删除当前章节" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
+          <span>删除</span>
+        </button>
+        <button class="toolbar-button" id="shortcutButton" type="button" title="查看键盘快捷键">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 0 1 4.9 1c0 1.8-2.5 2.1-2.5 3.7M12 17h.01"/></svg>
+          <span>快捷键</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="workspace" aria-label="写作工作区">
+      <aside class="chapter-panel panel" aria-labelledby="chaptersTitle">
+        <div class="panel-heading chapter-heading">
+          <h2 id="chaptersTitle">章节</h2>
+          <button class="button button-gold button-compact" id="newChapterButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            新建章节
+          </button>
+        </div>
+
+        <label class="search-field" for="chapterSearch">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg>
+          <span class="sr-only">搜索章节</span>
+          <input id="chapterSearch" type="search" placeholder="搜索章节…" autocomplete="off">
+          <kbd>⌘K</kbd>
+        </label>
+
+        <div class="sort-row">
+          <label for="sortSelect" class="sr-only">章节排序方式</label>
+          <select id="sortSelect">
+            <option value="name">按章节顺序</option>
+            <option value="modified">按修改时间</option>
+            <option value="words">按字数</option>
+            <option value="size">按文件大小</option>
+          </select>
+          <button class="square-button" id="sortOrderButton" type="button" aria-label="当前正序，切换为倒序" title="切换排序方向">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14m0 0-3-3m3 3 3-3M16 19V5m0 0-3 3m3-3 3 3"/></svg>
+          </button>
+        </div>
+
+        <div class="chapter-scroll" id="chapterScroll">
+          <div class="chapter-loading" id="chapterLoading" role="status">
+            <span></span><span></span><span></span>
+            <p>正在读取本地书稿…</p>
+          </div>
+          <div class="chapter-list" id="chapterList" hidden></div>
+          <div class="list-state" id="chapterEmpty" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10l4 4v12H5z"/><path d="M14 4v5h5M8 13h8M8 17h5"/></svg>
+            <p>还没有章节。</p>
+            <button class="text-button" id="emptyCreateButton" type="button">新建第一章</button>
+          </div>
+          <div class="list-state error-state" id="chapterError" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/></svg>
+            <p id="chapterErrorText">无法读取章节。</p>
+            <button class="text-button" id="retryChaptersButton" type="button">重试</button>
+          </div>
+        </div>
+
+        <footer class="chapter-footer">
+          <span id="chapterCount">0 个章节</span>
+          <span class="local-only"><span aria-hidden="true"></span>本地稿件</span>
+        </footer>
+      </aside>
+
+      <section class="editor-panel panel" aria-labelledby="editorTitle">
+        <header class="editor-heading">
+          <div class="editor-identity">
+            <p>正文</p>
+            <h2 id="editorTitle">请选择章节</h2>
+          </div>
+          <div class="chapter-metadata" id="chapterMetadata" aria-live="polite">
+            <span>等待载入</span>
+          </div>
+        </header>
+
+        <section class="conflict-banner" id="conflictBanner" role="alert" hidden>
+          <div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5m0 3h.01"/></svg>
+            <p><strong>检测到保存冲突</strong><span id="conflictText">磁盘上的章节已更新。你的未保存内容仍保留在编辑器中。</span></p>
+          </div>
+          <div class="conflict-actions">
+            <button class="button button-subtle" id="copyConflictButton" type="button">复制当前草稿</button>
+            <button class="button button-gold" id="reloadConflictButton" type="button">重新读取磁盘版本</button>
+          </div>
+        </section>
+
+        <div class="editor-stage">
+          <div class="editor-placeholder" id="editorPlaceholder">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10l4 4v12H5z"/><path d="M14 4v5h5M8 13h8M8 17h6"/></svg>
+            <p>从左侧选择一章，开始安静地写作。</p>
+          </div>
+          <div class="editor-loading" id="editorLoading" role="status" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span>正在读取章节…</span>
+          </div>
+          <textarea id="chapterEditor" aria-label="章节正文编辑器" spellcheck="true" autocomplete="off" disabled></textarea>
+        </div>
+
+        <footer class="editor-footer">
+          <div class="editor-stats" aria-live="polite">
+            <span id="selectionStat">选区字数：0</span>
+            <span aria-hidden="true">·</span>
+            <span id="chapterStat">全文字数：0</span>
+          </div>
+          <div class="save-tools">
+            <span id="savedAt">改动后手动保存</span>
+            <button class="button button-save" id="saveButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 16h8"/></svg>
+              保存章节 <kbd>⌘S</kbd>
+            </button>
+          </div>
+        </footer>
+      </section>
+
+      <aside class="assistant-column" aria-label="AI 写作助手">
+        <section class="rewrite-panel panel" aria-labelledby="rewriteTitle">
+          <div class="panel-heading assistant-heading">
+            <div>
+              <h2 id="rewriteTitle">AI 改写</h2>
+              <span class="selection-status" id="selectionStatus">尚未选择正文</span>
+            </div>
+            <span class="provider-badge is-checking" id="providerBadge"><span aria-hidden="true"></span>检测中</span>
+          </div>
+
+          <label class="field-label" for="rewriteInstruction">改写指令 <span>可选，说明风格或重点</span></label>
+          <div class="instruction-field">
+            <textarea id="rewriteInstruction" maxlength="2000" placeholder="例如：更含蓄、节奏更慢，增加环境描写…"></textarea>
+            <span><b id="instructionCount">0</b> / 2000</span>
+          </div>
+
+          <div class="privacy-note" id="privacyNote" role="note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></svg>
+            <p id="privacyText">正在检测 AI provider。启用远程 AI 时，选中文本、附近上下文与问题会发送给你配置的 provider。</p>
+          </div>
+
+          <button class="button button-primary button-full" id="rewriteButton" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2zM18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
+            生成改写预览
+          </button>
+
+          <div class="section-rule" aria-hidden="true"></div>
+
+          <div class="result-heading">
+            <span>预览</span>
+            <span id="rewriteStatus">尚未生成</span>
+          </div>
+          <div class="rewrite-result" id="rewriteResult" tabindex="0" aria-live="polite">
+            <p class="muted-copy">改写结果会显示在这里。生成预览不会修改或保存原稿。</p>
+          </div>
+          <div class="result-actions">
+            <button class="button button-subtle" id="replaceButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9a5 5 0 0 0-5 5v1M4 17h9a5 5 0 0 0 5-5v-1M4 13l2 2 2-2M20 11l-2-2-2 2"/></svg>
+              替换原文
+            </button>
+            <button class="button button-subtle" id="undoReplaceButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6"/></svg>
+              撤销替换
+            </button>
+            <button class="button button-subtle icon-only" id="copyRewriteButton" type="button" aria-label="复制改写结果" title="复制改写结果" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"/><path d="M16 8V5H5v11h3"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="chat-panel panel" aria-labelledby="chatTitle">
+          <header class="chat-heading">
+            <h2 id="chatTitle">书情问答</h2>
+            <div class="tabs" role="tablist" aria-label="问答面板">
+              <button class="tab is-active" id="chatTab" type="button" role="tab" aria-selected="true" aria-controls="chatView">对话</button>
+              <button class="tab" id="historyTab" type="button" role="tab" aria-selected="false" aria-controls="historyView">本地历史</button>
+            </div>
+          </header>
+
+          <div class="chat-view" id="chatView" role="tabpanel" aria-labelledby="chatTab">
+            <div class="chat-log" id="chatLog" aria-live="polite">
+              <div class="chat-empty">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v11H9l-4 3z"/><path d="M9 9h6m-6 3h4"/></svg>
+                <p>暂无对话内容</p>
+                <span>向助手询问人物动机、伏笔或情节取舍。</span>
+              </div>
+            </div>
+            <div class="chat-compose">
+              <label class="sr-only" for="chatInput">向书稿提问</label>
+              <textarea id="chatInput" rows="2" maxlength="12000" placeholder="向当前章节提问（例如：人物关系、伏笔、设定细节…）"></textarea>
+              <button class="send-button" id="sendChatButton" type="button" aria-label="发送问题" title="发送（⌘/Ctrl + Enter）" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8zM7 12h14"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="history-view" id="historyView" role="tabpanel" aria-labelledby="historyTab" hidden>
+            <div class="history-tools">
+              <span>仅保存在此浏览器，最多 60 条</span>
+              <button class="text-button" id="clearHistoryButton" type="button">清空</button>
+            </div>
+            <div class="history-list" id="historyList"></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <dialog class="workspace-dialog" id="newChapterDialog" aria-labelledby="newChapterTitle">
+    <form id="newChapterForm">
+      <div class="dialog-heading">
+        <div>
+          <p>新建本地稿件</p>
+          <h2 id="newChapterTitle">新建章节</h2>
+        </div>
+        <button class="square-button" id="closeNewChapterButton" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <label class="dialog-label" for="newChapterTitleInput">章节标题</label>
+      <input class="dialog-input" id="newChapterTitleInput" name="title" maxlength="120" placeholder="例如：第三章 山谷回声" autocomplete="off" required>
+      <label class="dialog-label" for="newChapterFormat">文件格式</label>
+      <select class="dialog-input" id="newChapterFormat" name="extension">
+        <option value=".md">Markdown (.md)</option>
+        <option value=".txt">纯文本 (.txt)</option>
+      </select>
+      <p class="dialog-help">文件名由标题安全生成，稿件保存在服务端配置的本地工作目录中。</p>
+      <div class="dialog-actions">
+        <button class="button button-subtle" id="cancelNewChapterButton" type="button">取消</button>
+        <button class="button button-primary" id="createChapterButton" type="submit">创建并打开</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="workspace-dialog danger-dialog" id="deleteDialog" aria-labelledby="deleteDialogTitle">
+    <form id="deleteForm">
+      <div class="dialog-heading">
+        <div>
+          <p>谨慎操作</p>
+          <h2 id="deleteDialogTitle">删除当前章节？</h2>
+        </div>
+        <button class="square-button" id="closeDeleteButton" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <p class="delete-copy">将删除 <strong id="deleteChapterName"></strong>。服务会在删除前创建备份，但当前界面不提供恢复操作。</p>
+      <div class="dialog-actions">
+        <button class="button button-subtle" id="cancelDeleteButton" type="button">取消</button>
+        <button class="button button-danger" id="confirmDeleteButton" type="submit">确认删除</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="workspace-dialog shortcut-dialog" id="shortcutDialog" aria-labelledby="shortcutTitle">
+    <div class="dialog-heading">
+      <div>
+        <p>Keyboard</p>
+        <h2 id="shortcutTitle">键盘快捷键</h2>
+      </div>
+      <button class="square-button" id="closeShortcutButton" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <dl class="shortcut-list">
+      <div><dt>保存当前章节</dt><dd><kbd>⌘ / Ctrl</kbd><kbd>S</kbd></dd></div>
+      <div><dt>搜索章节</dt><dd><kbd>⌘ / Ctrl</kbd><kbd>K</kbd></dd></div>
+      <div><dt>改写选中段落</dt><dd><kbd>⌘ / Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></dd></div>
+      <div><dt>发送书情问题</dt><dd><kbd>⌘ / Ctrl</kbd><kbd>Enter</kbd></dd></div>
+    </dl>
+  </dialog>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

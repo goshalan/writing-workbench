@@ -1,0 +1,63 @@
+name: Feature request
+description: Propose a focused improvement to the book-writing workflow.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Writing Workbench deliberately has a narrow scope. Explain the writing problem first, and use fictional examples only.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Scope checks
+      options:
+        - label: I searched existing issues and roadmap items.
+          required: true
+        - label: This request directly improves drafting or maintaining a Markdown/TXT book manuscript.
+          required: true
+        - label: The core workflow can remain local and usable without remote AI.
+          required: true
+        - label: I removed private manuscript text and personal infrastructure details.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Writing problem
+      description: What author workflow is difficult today, and who encounters it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior, including failure and privacy states.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or smaller approaches you considered.
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Areas affected
+      options:
+        - label: Chapter files or backups
+        - label: HTTP API
+        - label: Browser interface or accessibility
+        - label: Optional AI provider boundary
+        - label: Documentation only
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Acceptance examples
+      description: Give observable examples a test or reviewer could verify.

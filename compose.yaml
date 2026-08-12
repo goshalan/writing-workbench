@@ -1,0 +1,24 @@
+services:
+  writing-workbench:
+    build: .
+    init: true
+    environment:
+      WRITING_WORKBENCH_DIR: /data/manuscripts
+      WRITING_WORKBENCH_HOST: 0.0.0.0
+      WRITING_WORKBENCH_PORT: 8000
+      WRITING_WORKBENCH_AI_PROVIDER: mock
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - manuscripts:/data/manuscripts
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  manuscripts:

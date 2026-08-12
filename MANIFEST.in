@@ -1,0 +1,4 @@
+global-exclude ._*
+prune .venv
+prune .pytest_cache
+prune .ruff_cache

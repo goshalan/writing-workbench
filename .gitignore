@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+.venv/
+venv/
+
+# Local configuration and manuscripts
+.env
+.env.*
+!.env.example
+manuscripts/
+
+# Editors and operating systems
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+
+# Local QA artifacts
+playwright-report/
+test-results/
+*.log

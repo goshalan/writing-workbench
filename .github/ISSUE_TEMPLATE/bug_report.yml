@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a reproducible Writing Workbench defect using synthetic content.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Do not include private manuscripts, credentials, local absolute paths, or account details. Report security and privacy vulnerabilities privately according to SECURITY.md.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: This report directly concerns the Writing Workbench book-writing workflow.
+          required: true
+        - label: I replaced private text, paths, endpoints, and credentials with synthetic placeholders.
+          required: true
+        - label: This report does not disclose a security vulnerability.
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: State the observed behavior and the behavior you expected.
+      placeholder: The stale save returned 200; I expected a 409 conflict.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Use the bundled example or invented text and include exact steps.
+      placeholder: |
+        1. Start with provider set to mock.
+        2. Open the same example chapter in two tabs.
+        3. Save tab A, then save tab B.
+    validations:
+      required: true
+
+  - type: input
+    id: revision
+    attributes:
+      label: Version or commit
+      description: Tag or commit SHA, without a private repository URL.
+      placeholder: v0.1.0 or a commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: Python 3.12.4
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and browser
+      placeholder: Ubuntu 24.04 and Firefox 130
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: AI provider mode
+      options:
+        - Not involved
+        - mock
+        - off
+        - openai-compatible (do not include its URL, model, or key)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or additional context
+      description: Remove manuscript bodies, absolute paths, headers, credentials, and raw provider responses. Use a code block when useful.
+      render: shell
