@@ -8,6 +8,16 @@
   var STORED_TEXT_LIMIT = 4000;
   var REWRITE_TEXT_LIMIT = 24000;
   var CONTEXT_LIMIT = 60000;
+  var i18n = window.WritingWorkbenchI18n;
+
+  if (!i18n) {
+    throw new Error("Writing Workbench i18n failed to load");
+  }
+  i18n.apply();
+
+  function t(key, values) {
+    return i18n.t(key, values);
+  }
 
   var state = {
     chapters: [],
@@ -28,6 +38,8 @@
     saving: false,
     asking: false,
     rewriting: false,
+    analyzing: false,
+    analysis: null,
     conflict: false
   };
 
@@ -76,12 +88,18 @@
     undoReplaceButton: byId("undoReplaceButton"),
     copyRewriteButton: byId("copyRewriteButton"),
     chatTab: byId("chatTab"),
+    analysisTab: byId("analysisTab"),
     historyTab: byId("historyTab"),
     chatView: byId("chatView"),
+    analysisView: byId("analysisView"),
     historyView: byId("historyView"),
     chatLog: byId("chatLog"),
     chatInput: byId("chatInput"),
     sendChatButton: byId("sendChatButton"),
+    analyzeButton: byId("analyzeButton"),
+    analysisSafety: byId("analysisSafety"),
+    analysisStatus: byId("analysisStatus"),
+    analysisResult: byId("analysisResult"),
     historyList: byId("historyList"),
     clearHistoryButton: byId("clearHistoryButton"),
     newChapterDialog: byId("newChapterDialog"),
@@ -122,7 +140,7 @@
 
   function RequestError(message, status, code, details) {
     this.name = "RequestError";
-    this.message = message || "请求失败";
+    this.message = message || t("status.requestFailed");
     this.status = status || 0;
     this.code = code || "request_failed";
     this.details = isPlainObject(details) ? details : {};
@@ -142,7 +160,7 @@
     try {
       response = await fetch(url, requestOptions);
     } catch (_error) {
-      throw new RequestError("无法连接写作服务，请确认服务仍在运行", 0, "network_error");
+      throw new RequestError(t("status.network"), 0, "network_error");
     }
 
     var raw = {};
@@ -155,16 +173,21 @@
 
     if (!response.ok || raw.ok === false || payload.ok === false) {
       var errorValue = raw.error || payload.error || {};
-      var message = typeof errorValue === "string"
+      var fallbackMessage = typeof errorValue === "string"
         ? errorValue
-        : errorValue.message || payload.message || "请求失败（" + response.status + "）";
+        : errorValue.message || payload.message || t("status.requestFailedCode", { status: response.status });
       var code = isPlainObject(errorValue) && errorValue.code
         ? errorValue.code
         : payload.code || "request_failed";
       var details = isPlainObject(errorValue) && isPlainObject(errorValue.details)
         ? errorValue.details
         : payload.details;
-      throw new RequestError(message, response.status, code, details);
+      throw new RequestError(
+        i18n.errorMessage(code, fallbackMessage, response.status),
+        response.status,
+        code,
+        details
+      );
     }
     return payload;
   }
@@ -182,7 +205,7 @@
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (_error) {
-      toast("浏览器无法保存本地历史", "warning");
+      toast(t("status.historyStorage"), "warning");
     }
   }
 
@@ -192,11 +215,11 @@
   }
 
   function nowTime() {
-    return new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    return new Date().toLocaleTimeString(i18n.locale, { hour: "2-digit", minute: "2-digit" });
   }
 
   function nowDateTime() {
-    return new Date().toLocaleString("zh-CN", {
+    return new Date().toLocaleString(i18n.locale, {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -206,13 +229,13 @@
 
   function formatDate(value) {
     if (!value) {
-      return "时间未知";
+      return t("time.unknown");
     }
     var date = new Date(value);
     if (Number.isNaN(date.getTime())) {
       return String(value);
     }
-    return date.toLocaleString("zh-CN", {
+    return date.toLocaleString(i18n.locale, {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -248,7 +271,7 @@
     return chapterFilename(chapter)
       .replace(/\.(?:md|txt)$/i, "")
       .replace(/_+/g, " ")
-      .trim() || "未命名章节";
+      .trim() || t("chapters.unnamed");
   }
 
   function normalizeChapter(value) {
@@ -285,7 +308,7 @@
   }
 
   function naturalCompare(left, right) {
-    return String(left).localeCompare(String(right), "zh-CN", {
+    return String(left).localeCompare(String(right), i18n.locale, {
       numeric: true,
       sensitivity: "base"
     });
@@ -315,12 +338,12 @@
   }
 
   function visibleChapters() {
-    var query = el.chapterSearch.value.trim().toLocaleLowerCase("zh-CN");
+    var query = el.chapterSearch.value.trim().toLocaleLowerCase(i18n.locale);
     return state.chapters.filter(function (chapter) {
       if (!query) {
         return true;
       }
-      return (chapter.title + " " + chapter.filename).toLocaleLowerCase("zh-CN").indexOf(query) !== -1;
+      return (chapter.title + " " + chapter.filename).toLocaleLowerCase(i18n.locale).indexOf(query) !== -1;
     }).sort(compareChapters);
   }
 
@@ -334,11 +357,13 @@
   function renderChapters() {
     var chapters = visibleChapters();
     el.chapterList.replaceChildren();
-    el.chapterCount.textContent = state.chapters.length + " 个章节";
+    el.chapterCount.textContent = t("chapters.count", { count: state.chapters.length });
 
     if (!chapters.length) {
       var searching = Boolean(el.chapterSearch.value.trim());
-      el.chapterEmpty.querySelector("p").textContent = searching ? "没有匹配的章节。" : "还没有章节。";
+      el.chapterEmpty.querySelector("p").textContent = searching
+        ? t("chapters.noMatches")
+        : t("chapters.empty");
       el.emptyCreateButton.hidden = searching;
       showListState("empty");
       return;
@@ -362,7 +387,11 @@
       var title = document.createElement("strong");
       title.textContent = chapter.title;
       var meta = document.createElement("small");
-      meta.textContent = (chapter.extension || ".txt").slice(1).toUpperCase() + " · " + chapter.word_count + " 字 · " + formatDate(chapter.modified_at);
+      meta.textContent = t("chapters.rowMeta", {
+        format: (chapter.extension || ".txt").slice(1).toUpperCase(),
+        count: chapter.word_count,
+        date: formatDate(chapter.modified_at)
+      });
       copy.append(title, meta);
 
       var dot = document.createElement("span");
@@ -402,9 +431,9 @@
         clearEditor();
       }
     } catch (error) {
-      el.chapterErrorText.textContent = error.message || "无法读取章节。";
+      el.chapterErrorText.textContent = error.message || t("chapters.loadFailed");
       showListState("error");
-      toast(error.message || "无法读取章节", "error");
+      toast(error.message || t("status.loadFailed"), "error");
     }
   }
 
@@ -419,8 +448,8 @@
     state.conflict = false;
     el.editor.value = "";
     el.editor.disabled = true;
-    el.editorTitle.textContent = "请选择章节";
-    el.chapterMetadata.textContent = "等待载入";
+    el.editorTitle.textContent = t("editor.choose");
+    el.chapterMetadata.textContent = t("editor.waiting");
     el.editorPlaceholder.hidden = false;
     el.editorLoading.hidden = true;
     el.conflictBanner.hidden = true;
@@ -451,7 +480,7 @@
     if (!isDirty()) {
       return true;
     }
-    return window.confirm(message || "当前章节有未保存改动。放弃这些改动并继续吗？");
+    return window.confirm(message || t("status.discard"));
   }
 
   async function loadChapter(filename, options) {
@@ -487,20 +516,22 @@
       el.editor.disabled = false;
       el.editorTitle.textContent = chapter.title;
       el.chapterMetadata.textContent = (chapter.extension || ".txt").slice(1).toUpperCase() + " · " + formatBytes(chapter.size_bytes);
-      el.savedAt.textContent = chapter.modified_at ? "上次保存：" + formatDate(chapter.modified_at) : "已从磁盘读取";
+      el.savedAt.textContent = chapter.modified_at
+        ? t("save.last", { date: formatDate(chapter.modified_at) })
+        : t("save.loaded");
       el.conflictBanner.hidden = true;
       resetRewriteResult();
       mergeChapter(chapter);
       renderChapters();
       if (settings.record !== false) {
-        addHistory("open", "打开章节", chapter.title);
+        addHistory("open", t("action.open"), chapter.title);
       }
       requestAnimationFrame(function () {
         el.editor.focus();
         el.editor.setSelectionRange(0, 0);
       });
     } catch (error) {
-      toast(error.message || "无法读取章节", "error");
+      toast(error.message || t("status.loadFailed"), "error");
       if (error.status === 404) {
         await loadChapters("", { open: false, silent: true });
         clearEditor();
@@ -535,15 +566,15 @@
     var selected = start < end ? content.slice(start, end) : "";
     var selectedWords = countWords(selected);
     var totalWords = countWords(content);
-    el.selectionStat.textContent = "选区字数：" + selectedWords;
-    el.chapterStat.textContent = "全文字数：" + totalWords;
+    el.selectionStat.textContent = t("editor.selectionCount", { count: selectedWords });
+    el.chapterStat.textContent = t("editor.totalCount", { count: totalWords });
     if (selected && selected.trim()) {
       state.selection = { start: start, end: end, text: selected };
-      el.selectionStatus.textContent = "已选择 " + selectedWords + " 字";
+      el.selectionStatus.textContent = t("editor.selectedCount", { count: selectedWords });
       el.selectionStatus.classList.add("is-ready");
     } else {
       state.selection = null;
-      el.selectionStatus.textContent = "尚未选择正文";
+      el.selectionStatus.textContent = t("editor.noSelection");
       el.selectionStatus.classList.remove("is-ready");
     }
     updateControls();
@@ -552,16 +583,16 @@
   function updateEditorState() {
     updateEditorStats();
     if (state.saving) {
-      setSaveState("saving", "正在保存…");
+      setSaveState("saving", t("save.saving"));
     } else if (state.conflict) {
-      setSaveState("conflict", "保存冲突 · 草稿仍保留");
+      setSaveState("conflict", t("save.conflict"));
     } else if (isDirty()) {
-      setSaveState("dirty", "尚未保存 · 仅在浏览器中");
-      el.savedAt.textContent = "改动尚未写入磁盘";
+      setSaveState("dirty", t("save.dirty"));
+      el.savedAt.textContent = t("save.notWritten");
     } else if (state.activeFilename) {
-      setSaveState("saved", "已保存 · 手动保存");
+      setSaveState("saved", t("save.savedManual"));
     } else {
-      setSaveState("saved", "本地优先 · 手动保存");
+      setSaveState("saved", t("save.localManual"));
     }
     updateControls();
   }
@@ -576,6 +607,8 @@
     el.rewriteButton.disabled = !aiEnabled || !hasChapter || !state.selection || state.rewriting;
     el.chatInput.disabled = !aiEnabled;
     el.sendChatButton.disabled = !aiEnabled || !hasChapter || !el.chatInput.value.trim() || state.asking;
+    el.analyzeButton.disabled = !aiEnabled || !state.chapters.length || state.analyzing;
+    el.analysisSafety.textContent = isDirty() ? t("analysis.unsaved") : t("analysis.savedOnly");
     el.replaceButton.disabled = !state.rewrite || !state.rewrite.text;
     el.copyRewriteButton.disabled = !state.rewrite || !state.rewrite.text;
     el.undoReplaceButton.disabled = state.replacementUndo.length === 0;
@@ -589,11 +622,15 @@
     state.conflict = true;
     var currentSha = error && error.details && error.details.current_sha256;
     el.conflictText.textContent = action === "delete"
-      ? "磁盘上的章节已更新，因此没有删除。请重新读取并确认内容后再试。"
-      : "磁盘上的章节已更新。你的未保存内容仍保留在编辑器中" + (currentSha ? "，可复制后再重新读取。" : "。") ;
+      ? t("conflict.delete")
+      : t("conflict.edit", {
+        suffix: currentSha
+          ? (i18n.language === "en" ? "; copy it before reloading." : "，可复制后再重新读取。")
+          : (i18n.language === "en" ? "." : "。")
+      });
     el.conflictBanner.hidden = false;
     updateEditorState();
-    toast("检测到并发冲突，当前草稿未丢失", "warning");
+    toast(t("status.conflictToast"), "warning");
   }
 
   async function saveChapter() {
@@ -603,7 +640,7 @@
     state.saving = true;
     state.conflict = false;
     el.conflictBanner.hidden = true;
-    setButtonBusy(el.saveButton, true, "保存中…");
+    setButtonBusy(el.saveButton, true, t("status.saving"));
     updateEditorState();
     var contentToSave = el.editor.value;
     try {
@@ -620,17 +657,17 @@
       state.activeMeta = chapter;
       state.conflict = false;
       el.conflictBanner.hidden = true;
-      el.savedAt.textContent = "刚刚保存（已自动备份）";
+      el.savedAt.textContent = t("save.justSaved");
       mergeChapter(chapter);
       renderChapters();
-      addHistory("save", "保存章节", chapter.title);
-      toast("章节已保存，保存前版本已备份");
+      addHistory("save", t("action.save"), chapter.title);
+      toast(t("status.saved"));
     } catch (error) {
       if (error.status === 409 || error.code === "chapter_conflict") {
         showConflict(error, "save");
       } else {
-        setSaveState("error", "保存失败 · 草稿仍保留");
-        toast(error.message || "保存失败", "error");
+        setSaveState("error", t("status.saveFailedState"));
+        toast(error.message || t("status.saveFailed"), "error");
       }
     } finally {
       state.saving = false;
@@ -643,11 +680,11 @@
     if (!state.activeFilename) {
       return;
     }
-    if (isDirty() && !window.confirm("重新读取会放弃编辑器中的未保存内容。建议先复制当前草稿。确定继续吗？")) {
+    if (isDirty() && !window.confirm(t("status.reloadConfirm"))) {
       return;
     }
     await loadChapter(state.activeFilename, { force: true });
-    toast("已读取磁盘上的最新版本");
+    toast(t("status.reloaded"));
   }
 
   function setButtonBusy(button, busy, label) {
@@ -677,9 +714,9 @@
     el.rewriteResult.replaceChildren();
     var copy = document.createElement("p");
     copy.className = "muted-copy";
-    copy.textContent = "改写结果会显示在这里。生成预览不会修改或保存原稿。";
+    copy.textContent = t("rewrite.empty");
     el.rewriteResult.appendChild(copy);
-    el.rewriteStatus.textContent = "尚未生成";
+    el.rewriteStatus.textContent = t("rewrite.notGenerated");
     updateControls();
   }
 
@@ -706,20 +743,20 @@
     }
     updateEditorStats();
     if (!state.activeFilename) {
-      toast("请先打开一个章节", "warning");
+      toast(t("status.openFirst"), "warning");
       return;
     }
     if (!state.selection || !state.selection.text.trim()) {
-      toast("请先在正文中选择要改写的段落", "warning");
+      toast(t("status.selectText"), "warning");
       el.editor.focus();
       return;
     }
     if (state.selection.text.length > REWRITE_TEXT_LIMIT) {
-      toast("选中文本超过 24,000 个字符，请缩小选区", "error");
+      toast(t("status.selectionTooLarge"), "error");
       return;
     }
     if (!state.providerReady || state.provider === "off") {
-      toast("AI provider 当前不可用", "warning");
+      toast(t("status.aiUnavailable"), "warning");
       return;
     }
 
@@ -731,9 +768,9 @@
     state.rewriting = true;
     state.rewrite = null;
     el.rewriteResult.className = "rewrite-result";
-    el.rewriteResult.textContent = "正在生成改写预览…";
-    el.rewriteStatus.textContent = "生成中";
-    setButtonBusy(el.rewriteButton, true, "正在生成…");
+    el.rewriteResult.textContent = t("status.generatingPreview");
+    el.rewriteStatus.textContent = t("status.inProgress");
+    setButtonBusy(el.rewriteButton, true, t("status.generating"));
     updateControls();
     try {
       var payload = await api("/api/ai/rewrite", {
@@ -741,12 +778,13 @@
         body: JSON.stringify({
           text: snapshot.text,
           instruction: el.instruction.value.trim(),
-          context: nearbyContext(snapshot)
+          context: nearbyContext(snapshot),
+          language: i18n.language
         })
       });
       var rewritten = String(payload.result || payload.rewritten_text || payload.rewrite || payload.text || "").trim();
       if (!rewritten) {
-        throw new RequestError("AI provider 没有返回改写内容", 502, "empty_ai_response");
+        throw new RequestError(t("status.emptyRewrite"), 502, "empty_ai_response");
       }
       state.rewrite = {
         text: rewritten,
@@ -755,14 +793,14 @@
       };
       el.rewriteResult.className = "rewrite-result is-ready";
       el.rewriteResult.textContent = rewritten;
-      el.rewriteStatus.textContent = "预览完成 · 未写入";
-      addHistory("rewrite", "生成改写预览", clampText(snapshot.text, 180));
-      toast("改写预览已生成，原稿尚未改变");
+      el.rewriteStatus.textContent = t("status.previewComplete");
+      addHistory("rewrite", t("action.rewrite"), clampText(snapshot.text, 180));
+      toast(t("status.previewToast"));
     } catch (error) {
       el.rewriteResult.className = "rewrite-result is-error";
-      el.rewriteResult.textContent = error.message || "生成改写预览失败";
-      el.rewriteStatus.textContent = "生成失败";
-      toast(error.message || "生成改写预览失败", "error");
+      el.rewriteResult.textContent = error.message || t("status.previewFailed");
+      el.rewriteStatus.textContent = t("status.generationFailed");
+      toast(error.message || t("status.previewFailed"), "error");
     } finally {
       state.rewriting = false;
       setButtonBusy(el.rewriteButton, false);
@@ -788,7 +826,7 @@
     var current = el.editor.value;
     var range = locateRewriteTarget(state.rewrite.selection, current);
     if (!range) {
-      toast("正文已变化且无法唯一定位原选区，请重新选择", "error");
+      toast(t("status.changedSelection"), "error");
       return;
     }
     state.replacementUndo.push({
@@ -802,22 +840,22 @@
     el.editor.focus();
     el.editor.setSelectionRange(range.start, range.start + replacement.length);
     updateEditorState();
-    addHistory("replace", "替换选中原文", clampText(replacement, 180));
-    toast("已替换到编辑器；请手动保存后写入磁盘");
+    addHistory("replace", t("action.replace"), clampText(replacement, 180));
+    toast(t("status.replaced"));
   }
 
   function undoReplacement() {
     var snapshot = state.replacementUndo.pop();
     if (!snapshot) {
-      toast("没有可撤销的 AI 替换", "warning");
+      toast(t("status.noUndo"), "warning");
       return;
     }
     el.editor.value = snapshot.content;
     el.editor.focus();
     el.editor.setSelectionRange(snapshot.start, snapshot.end);
     updateEditorState();
-    addHistory("undo", "撤销 AI 替换", state.activeMeta ? state.activeMeta.title : state.activeFilename);
-    toast("已撤销上一次 AI 替换");
+    addHistory("undo", t("action.undo"), state.activeMeta ? state.activeMeta.title : state.activeFilename);
+    toast(t("status.undone"));
   }
 
   async function copyText(value) {
@@ -838,9 +876,9 @@
         document.execCommand("copy");
         area.remove();
       }
-      toast("已复制到剪贴板");
+      toast(t("status.copied"));
     } catch (_error) {
-      toast("复制失败，请手动选择并复制", "error");
+      toast(t("status.copyFailed"), "error");
     }
   }
 
@@ -881,9 +919,9 @@
       var empty = document.createElement("div");
       empty.className = "chat-empty";
       var title = document.createElement("p");
-      title.textContent = "暂无对话内容";
+      title.textContent = t("chat.empty");
       var note = document.createElement("span");
-      note.textContent = "向助手询问人物动机、伏笔或情节取舍。";
+      note.textContent = t("chat.hint");
       empty.append(title, note);
       el.chatLog.appendChild(empty);
       return;
@@ -895,7 +933,7 @@
       var meta = document.createElement("div");
       meta.className = "message-meta";
       var who = document.createElement("span");
-      who.textContent = message.role === "user" ? "你" : "写作助手";
+      who.textContent = message.role === "user" ? t("chat.you") : t("chat.assistant");
       var time = document.createElement("time");
       time.textContent = message.time || "";
       meta.append(who, time);
@@ -914,7 +952,7 @@
     if (!state.history.length) {
       var empty = document.createElement("div");
       empty.className = "history-empty";
-      empty.textContent = "还没有本地操作记录。";
+      empty.textContent = t("history.empty");
       el.historyList.appendChild(empty);
       return;
     }
@@ -924,7 +962,7 @@
       article.className = "history-row";
       var header = document.createElement("header");
       var title = document.createElement("strong");
-      title.textContent = item.title || "写作操作";
+      title.textContent = item.title || t("history.operation");
       var time = document.createElement("time");
       time.textContent = item.at || "";
       header.append(title, time);
@@ -938,13 +976,18 @@
 
   function switchAssistantView(view) {
     var showChat = view === "chat";
+    var showAnalysis = view === "analysis";
+    var showHistory = view === "history";
     el.chatView.hidden = !showChat;
-    el.historyView.hidden = showChat;
+    el.analysisView.hidden = !showAnalysis;
+    el.historyView.hidden = !showHistory;
     el.chatTab.classList.toggle("is-active", showChat);
-    el.historyTab.classList.toggle("is-active", !showChat);
+    el.analysisTab.classList.toggle("is-active", showAnalysis);
+    el.historyTab.classList.toggle("is-active", showHistory);
     el.chatTab.setAttribute("aria-selected", showChat ? "true" : "false");
-    el.historyTab.setAttribute("aria-selected", showChat ? "false" : "true");
-    if (!showChat) {
+    el.analysisTab.setAttribute("aria-selected", showAnalysis ? "true" : "false");
+    el.historyTab.setAttribute("aria-selected", showHistory ? "true" : "false");
+    if (showHistory) {
       renderHistory();
     }
   }
@@ -956,9 +999,9 @@
     var meta = document.createElement("div");
     meta.className = "message-meta";
     var who = document.createElement("span");
-    who.textContent = "写作助手";
+    who.textContent = t("chat.assistant");
     var time = document.createElement("time");
-    time.textContent = "正在回答";
+    time.textContent = t("chat.answering");
     meta.append(who, time);
     var dots = document.createElement("div");
     dots.className = "typing-dots";
@@ -973,11 +1016,11 @@
       return;
     }
     if (!state.activeFilename) {
-      toast("请先打开一个章节", "warning");
+      toast(t("status.openFirst"), "warning");
       return;
     }
     if (!state.providerReady || state.provider === "off") {
-      toast("AI provider 当前不可用", "warning");
+      toast(t("status.aiUnavailable"), "warning");
       return;
     }
 
@@ -1000,12 +1043,13 @@
         body: JSON.stringify({
           question: question,
           context: limitedContext(el.editor.value),
-          history: previous
+          history: previous,
+          language: i18n.language
         })
       });
       var answer = String(payload.answer || payload.reply || payload.result || payload.content || "").trim();
       if (!answer) {
-        throw new RequestError("AI provider 没有返回回答", 502, "empty_ai_response");
+        throw new RequestError(t("status.emptyAnswer"), 502, "empty_ai_response");
       }
       state.chat.push({
         role: "assistant",
@@ -1013,22 +1057,71 @@
         provider: String(payload.provider || state.provider),
         time: nowTime()
       });
-      addHistory("ask", "书情问答", clampText(question + "｜" + answer, 380));
+      addHistory("ask", t("action.ask"), clampText(question + " | " + answer, 380));
     } catch (error) {
       state.chat.push({
         role: "assistant",
-        content: "调用失败：" + (error.message || "未知错误"),
+        content: t("status.callFailed", { message: error.message || t("status.unknownError") }),
         provider: state.provider,
         time: nowTime(),
         error: true
       });
-      toast(error.message || "书情问答失败", "error");
+      toast(error.message || t("status.askFailed"), "error");
     } finally {
       state.asking = false;
       pending.remove();
       persistChat();
       renderChat();
       setButtonBusy(el.sendChatButton, false);
+      updateControls();
+    }
+  }
+
+  async function analyzeManuscript() {
+    if (state.analyzing) {
+      return;
+    }
+    if (!state.chapters.length) {
+      toast(t("analysis.noChapters"), "warning");
+      return;
+    }
+    if (!state.providerReady || state.provider === "off") {
+      toast(t("status.aiUnavailable"), "warning");
+      return;
+    }
+    state.analyzing = true;
+    el.analysisResult.className = "analysis-result is-loading";
+    el.analysisResult.textContent = t("analysis.running");
+    el.analysisStatus.textContent = t("analysis.running");
+    setButtonBusy(el.analyzeButton, true, t("status.analyzing"));
+    updateControls();
+    try {
+      var payload = await api("/api/ai/analyze", {
+        method: "POST",
+        body: JSON.stringify({ language: i18n.language })
+      });
+      var report = String(payload.report || payload.analysis || payload.result || "").trim();
+      if (!report) {
+        throw new RequestError(t("status.emptyAnswer"), 502, "empty_ai_response");
+      }
+      var count = Number(payload.analyzed_chapters || state.chapters.length);
+      state.analysis = { report: report, count: count, provider: payload.provider || state.provider };
+      el.analysisResult.className = "analysis-result is-ready";
+      el.analysisResult.textContent = report;
+      el.analysisStatus.textContent = t("analysis.complete", { count: count });
+      addHistory("analyze", t("action.analyze"), t("analysis.complete", { count: count }));
+      toast(t("status.analysisComplete"));
+    } catch (error) {
+      el.analysisResult.className = "analysis-result is-error";
+      el.analysisResult.textContent = error.message || t("status.analysisFailed");
+      el.analysisStatus.textContent = t("analysis.failed");
+      toast(error.message || t("status.analysisFailed"), "error");
+    } finally {
+      state.analyzing = false;
+      setButtonBusy(el.analyzeButton, false);
+      if (state.analysis) {
+        el.analyzeButton.querySelector("span").textContent = t("analysis.rerun");
+      }
       updateControls();
     }
   }
@@ -1072,7 +1165,7 @@
       return;
     }
     var initialContent = extension === ".md" ? "# " + title + "\n\n" : title + "\n\n";
-    setButtonBusy(el.createChapterButton, true, "创建中…");
+    setButtonBusy(el.createChapterButton, true, t("status.creating"));
     try {
       var payload = await api("/api/chapters", {
         method: "POST",
@@ -1085,11 +1178,11 @@
       var chapter = extractChapter(payload, "");
       closeDialog(el.newChapterDialog);
       el.newChapterForm.reset();
-      addHistory("create", "新建章节", chapter.title || title);
-      toast("新章节已创建");
+      addHistory("create", t("action.create"), chapter.title || title);
+      toast(t("status.created"));
       await loadChapters(chapter.filename, { record: false });
     } catch (error) {
-      toast(error.message || "新建章节失败", "error");
+      toast(error.message || t("status.createFailed"), "error");
     } finally {
       setButtonBusy(el.createChapterButton, false);
       updateControls();
@@ -1100,7 +1193,7 @@
     if (!state.activeFilename) {
       return;
     }
-    if (isDirty() && !window.confirm("当前章节有未保存改动。删除会舍弃这些改动，仍要继续吗？")) {
+    if (isDirty() && !window.confirm(t("status.deleteDirty"))) {
       return;
     }
     el.deleteChapterName.textContent = state.activeFilename;
@@ -1114,15 +1207,15 @@
       return;
     }
     var deleting = state.activeFilename;
-    setButtonBusy(el.confirmDeleteButton, true, "删除中…");
+    setButtonBusy(el.confirmDeleteButton, true, t("status.deleting"));
     try {
       await api(chapterUrl(deleting), {
         method: "DELETE",
         body: JSON.stringify({ expected_sha256: state.activeSha256 })
       });
       closeDialog(el.deleteDialog);
-      addHistory("delete", "删除章节", deleting);
-      toast("章节已删除，删除前版本已备份");
+      addHistory("delete", t("action.delete"), deleting);
+      toast(t("status.deleted"));
       clearEditor();
       await loadChapters("", { record: false });
     } catch (error) {
@@ -1130,7 +1223,7 @@
       if (error.status === 409 || error.code === "chapter_conflict") {
         showConflict(error, "delete");
       } else {
-        toast(error.message || "删除章节失败", "error");
+        toast(error.message || t("status.deleteFailed"), "error");
       }
     } finally {
       setButtonBusy(el.confirmDeleteButton, false);
@@ -1139,7 +1232,7 @@
   }
 
   function clearLocalHistory() {
-    if ((state.history.length || state.chat.length) && !window.confirm("清空此浏览器中的写作操作与问答记录？这不会删除稿件。")) {
+    if ((state.history.length || state.chat.length) && !window.confirm(t("status.clearConfirm"))) {
       return;
     }
     state.history = [];
@@ -1148,7 +1241,7 @@
     writeLocal(CHAT_STORAGE_KEY, []);
     renderHistory();
     renderChat();
-    toast("本地浏览器历史已清空");
+    toast(t("status.cleared"));
   }
 
   function updateProvider(provider) {
@@ -1166,26 +1259,26 @@
     var dot = document.createElement("span");
     dot.setAttribute("aria-hidden", "true");
     el.providerBadge.replaceChildren(dot);
-    var label = document.createTextNode("未知状态");
+    var label = document.createTextNode(t("provider.unknown"));
 
-    if (normalized === "mock") {
+    if (normalized === "hermes" || normalized === "local" || normalized === "local-agent") {
       el.providerBadge.classList.add("is-local");
-      label = document.createTextNode("离线演示");
+      label = document.createTextNode("Hermes · local");
       el.privacyNote.classList.add("is-local");
-      el.privacyText.textContent = "当前使用 mock provider：改写与问答在本地演示，不会把书稿发送到远程服务。";
+      el.privacyText.textContent = t("provider.hermesNote");
+    } else if (normalized === "mock") {
+      el.providerBadge.classList.add("is-local");
+      label = document.createTextNode(t("provider.mock"));
+      el.privacyNote.classList.add("is-local");
+      el.privacyText.textContent = t("provider.mockNote");
     } else if (normalized === "off") {
       el.providerBadge.classList.add("is-off");
-      label = document.createTextNode("AI 已关闭");
-      el.privacyText.textContent = "AI 功能已关闭。章节读取、编辑、保存和备份不受影响。";
-    } else if (normalized === "openai-compatible" || normalized === "openai") {
-      el.providerBadge.classList.add("is-remote");
-      label = document.createTextNode("远程 AI");
-      el.privacyNote.classList.add("is-remote");
-      el.privacyText.textContent = "远程模式已启用：生成改写时会发送选中文本与附近上下文；问答时会发送问题、当前章节上下文及最近对话给已配置的 provider。";
+      label = document.createTextNode(t("provider.off"));
+      el.privacyText.textContent = t("provider.offNote");
     } else {
       el.providerBadge.classList.add("is-checking");
       state.providerReady = false;
-      el.privacyText.textContent = "无法确认 AI provider。为保护稿件，AI 操作暂不可用。";
+      el.privacyText.textContent = t("provider.unknownNote");
     }
     el.providerBadge.appendChild(label);
     updateControls();
@@ -1197,7 +1290,7 @@
       updateProvider(payload.provider || (payload.ai && payload.ai.provider) || "unknown");
     } catch (error) {
       updateProvider("unknown");
-      toast(error.message || "无法读取服务状态", "error");
+      toast(error.message || t("status.healthFailed"), "error");
     }
   }
 
@@ -1209,7 +1302,7 @@
     try {
       document.execCommand(command);
     } catch (_error) {
-      toast("浏览器不支持此编辑操作", "warning");
+      toast(t("status.unsupportedEdit"), "warning");
     }
     window.setTimeout(updateEditorState, 0);
   }
@@ -1261,10 +1354,10 @@
     el.sortOrderButton.addEventListener("click", function () {
       state.sortOrder = state.sortOrder === "asc" ? "desc" : "asc";
       var asc = state.sortOrder === "asc";
-      el.sortOrderButton.setAttribute("aria-label", asc ? "当前正序，切换为倒序" : "当前倒序，切换为正序");
+      el.sortOrderButton.setAttribute("aria-label", asc ? t("chapters.sortAscLabel") : t("chapters.sortDescLabel"));
       el.sortOrderButton.classList.toggle("is-desc", !asc);
       renderChapters();
-      toast(asc ? "章节已按正序排列" : "章节已按倒序排列");
+      toast(asc ? t("status.sortedAsc") : t("status.sortedDesc"));
     });
     el.chapterList.addEventListener("click", function (event) {
       var row = event.target.closest(".chapter-row");
@@ -1294,6 +1387,7 @@
     });
 
     el.chatTab.addEventListener("click", function () { switchAssistantView("chat"); });
+    el.analysisTab.addEventListener("click", function () { switchAssistantView("analysis"); });
     el.historyTab.addEventListener("click", function () { switchAssistantView("history"); });
     el.chatInput.addEventListener("input", updateControls);
     el.chatInput.addEventListener("keydown", function (event) {
@@ -1303,6 +1397,7 @@
       }
     });
     el.sendChatButton.addEventListener("click", sendQuestion);
+    el.analyzeButton.addEventListener("click", analyzeManuscript);
     el.clearHistoryButton.addEventListener("click", clearLocalHistory);
 
     window.addEventListener("beforeunload", function (event) {

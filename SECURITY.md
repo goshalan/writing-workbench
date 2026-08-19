@@ -1,6 +1,6 @@
 # Security policy
 
-Writing Workbench handles unpublished text and optional remote AI credentials. Please report vulnerabilities privately and avoid including real manuscripts or secrets in any report.
+Writing Workbench handles unpublished text and invokes an optional local Hermes agent. Please report vulnerabilities privately and avoid including real manuscripts or secrets in any report.
 
 ## Supported versions
 
@@ -23,7 +23,7 @@ Include only what is needed to reproduce and assess the report:
 - operating system and Python/browser versions;
 - a concise impact statement;
 - minimal reproduction using synthetic text and placeholder credentials;
-- whether a remote provider or non-default bind address is involved;
+- whether the local Hermes provider or a non-default bind address is involved;
 - any suggested remediation or disclosure constraints.
 
 The project currently makes no guaranteed response-time SLA. Maintainers will make a reasonable effort to acknowledge, investigate, coordinate a fix, and credit reporters who want attribution. Please allow a fix to be prepared before public disclosure.
@@ -33,9 +33,9 @@ The project currently makes no guaranteed response-time SLA. Maintainers will ma
 - path traversal, symlink escape, unsafe filename handling, or arbitrary file access;
 - stale revision bypass, missing backup, partial write, or destructive save behavior;
 - request-size limit bypass or resource exhaustion with a practical impact;
-- provider keys, absolute paths, manuscript content, or stack traces disclosed to the browser or logs;
+- local-agent paths, prompts, absolute manuscript paths, manuscript content, or stack traces disclosed to the browser or logs;
 - unintended remote requests in `mock` or `off` mode;
-- remote-provider requests containing text the user did not explicitly submit;
+- local-agent invocations containing text the user did not explicitly ask the app to analyze;
 - cross-origin behavior that creates a practical attack against the loopback service;
 - dependency vulnerabilities exploitable in the supported configuration.
 

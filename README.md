@@ -4,7 +4,7 @@
 
 Writing Workbench is a small, local-first workspace for drafting books in Markdown and plain text. It combines chapter navigation, a distraction-conscious editor, revision helpers, and explicit save safety in one self-hosted Flask application.
 
-The core writing workflow works offline. AI features are optional: a deterministic mock provider is available for local demonstrations, and an OpenAI-compatible provider can be configured explicitly when remote assistance is wanted.
+The core writing workflow works offline. AI features are optional and use a local Hermes agent by default; a deterministic mock provider remains available for network-free demonstrations. Writing Workbench itself needs no API key.
 
 > Screenshot placeholder: before the first public release, capture the three-column workspace with only the bundled fictional example manuscript visible. Remove browser bookmarks, local paths, notifications, account details, and provider credentials from the frame, then add the image under `docs/images/` and link it here.
 
@@ -24,6 +24,8 @@ This repository contains one product only: a writing workbench. Every feature is
 - Show character and word counts, warn about unsaved work, and support keyboard shortcuts.
 - Preview, replace, and undo AI-assisted rewrites.
 - Ask questions about supplied manuscript context.
+- Analyze all saved chapters for character relationships, foreshadowing, continuity risks, and next-chapter suggestions.
+- Choose English or Simplified Chinese automatically from the browser and operating-system language preference.
 - Keep up to 60 operation-history entries and 30 question-and-answer messages in this browser's `localStorage`, with an in-app clear action.
 - Expose a health endpoint and consistent structured errors.
 
@@ -81,23 +83,21 @@ The application reads configuration at startup. Secrets must be supplied through
 | `WRITING_WORKBENCH_MAX_REQUEST_BYTES` | `2097152` | Maximum request size in bytes |
 | `WRITING_WORKBENCH_MAX_FILE_BYTES` | `1900000` | Maximum chapter size in bytes |
 | `WRITING_WORKBENCH_BACKUP_LIMIT` | `10` | Maximum retained backups per chapter |
-| `WRITING_WORKBENCH_AI_PROVIDER` | `mock` | `mock`, `off`, or `openai-compatible` |
-| `WRITING_WORKBENCH_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL of an explicitly selected compatible API |
-| `WRITING_WORKBENCH_OPENAI_API_KEY` | unset | Provider credential, read only by the server process |
-| `WRITING_WORKBENCH_OPENAI_MODEL` | unset | Provider model identifier |
-| `WRITING_WORKBENCH_AI_TIMEOUT` | `30` | Remote provider timeout in seconds |
+| `WRITING_WORKBENCH_AI_PROVIDER` | `hermes` | `hermes`, `mock`, or `off` |
+| `WRITING_WORKBENCH_HERMES_COMMAND` | discovered from `PATH` | Local Hermes executable |
+| `WRITING_WORKBENCH_HERMES_PROFILE` | empty | Optional isolated local Hermes profile; empty uses Hermes' current default |
+| `WRITING_WORKBENCH_AI_TIMEOUT` | `120` | Local-agent timeout in seconds |
+| `WRITING_WORKBENCH_ANALYSIS_CONTEXT_CHARS` | `100000` | Maximum saved-manuscript characters sent to one analysis run |
 
-All application settings use the `WRITING_WORKBENCH_` prefix. The remote provider also accepts `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` compatibility aliases; the prefixed forms are recommended to avoid collisions.
+All application settings use the `WRITING_WORKBENCH_` prefix. The browser cannot change the Hermes executable or profile.
 
 See [.env.example](.env.example) for placeholders. Export the values or configure them in your process manager; the application does not load `.env` files by itself. Do not commit a populated `.env` file.
 
-## Optional AI providers
+## Local AI providers
 
-`mock` is safe for demonstrations and performs no network request. `off` disables AI requests. `openai-compatible` sends requests to the configured remote base URL, whose `/chat/completions` endpoint must accept the configured model.
+`hermes` invokes the selected local Hermes profile as a subprocess. `mock` is deterministic and performs no network request. `off` disables AI requests. The Hermes invocation is restricted to a non-mutating toolset, ignores workspace rules, and is instructed to treat manuscript text as untrusted content.
 
-When a remote provider is enabled, text selected for rewriting, rewrite instructions, questions, the manuscript context attached to those requests, and up to the 20 most recent question-and-answer messages used for continuity are sent to that provider. Nothing is sent merely by opening or saving a chapter. Review the provider's terms and data-retention policy, use the smallest necessary context, and do not submit sensitive manuscripts unless you accept that disclosure.
-
-The API key remains server-side: it is read from the environment, is not persisted by Writing Workbench, and is never included in frontend configuration or API responses.
+An AI action passes only the necessary text to the local Hermes process: the selected passage and nearby context for rewriting, the current chapter and recent conversation for Q&A, or bounded copies of all saved chapters for whole-manuscript analysis. Opening, editing, or saving never invokes Hermes. Unsaved editor changes are excluded from whole-manuscript analysis.
 
 ## Security and privacy model
 
@@ -107,7 +107,7 @@ Writing Workbench is designed for a single trusted user on a trusted machine:
 - Only simple `.md` and `.txt` filenames inside the configured manuscript root are accepted.
 - Request size is capped before JSON processing.
 - Saves require the last-seen SHA-256 revision, use a temporary file plus atomic replacement, and back up the previous version.
-- Manuscript text stays local unless the user invokes an AI action while a remote provider is enabled.
+- Manuscript text stays in the local application/Hermes boundary; only explicit AI actions invoke the local agent.
 - Browser `localStorage` retains up to 60 operation records and 30 question-and-answer messages for the current origin. Operation records can include chapter titles and short rewrite or Q&A excerpts; each stored Q&A message is limited to 4,000 characters. These records persist until cleared or evicted by the browser. The History panel's **Clear** action removes both collections without deleting manuscript files; browser site-data controls can clear them as well. The unsaved editor buffer is not stored there as a manuscript backup.
 
 Do not expose the development server directly to a public or untrusted network. For a shared deployment, add authentication, TLS, CSRF protection, a production WSGI server, rate limits, and an explicit authorization model. See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
@@ -121,7 +121,7 @@ Browser (native HTML/CSS/JS)
         │ JSON over loopback HTTP
 Flask routes and structured errors
         ├── safe chapter store ── manuscript files + rotating backups
-        └── provider interface ── mock/off or optional remote API
+        └── provider interface ── local Hermes / mock / off
 ```
 
 The chapter store owns filename validation, revision calculation, backup rotation, and atomic writes. Provider adapters share a small interface so that editing remains independent from any AI service. Details and trust boundaries are documented in [docs/architecture.md](docs/architecture.md).
@@ -135,6 +135,7 @@ The JSON API includes:
 - `GET, PUT, DELETE /api/chapters/<filename>`
 - `POST /api/ai/rewrite`
 - `POST /api/ai/ask`
+- `POST /api/ai/analyze`
 
 A save carries the revision returned by the preceding read. If the file changed in the meantime, the server returns `409 conflict` with the current revision so the client can reload or reconcile deliberately. See [docs/api.md](docs/api.md) for request and response examples.
 
@@ -145,7 +146,7 @@ A save carries the revision returned by the preceding read. If the file changed 
 - Backup browsing and restoration in the interface.
 - Export to a small set of open, documented formats.
 - Pluggable local inference adapters with clear capability detection.
-- Internationalized interface strings and contributor-maintained translations.
+- Contributor-maintained translations beyond English and Simplified Chinese.
 
 Roadmap items are proposals, not promises or completed features. Please open a feature request before investing in a large change.
 

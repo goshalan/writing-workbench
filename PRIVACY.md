@@ -5,10 +5,10 @@ Writing Workbench is local-first, but “local” is a deployment choice, not a 
 ## At a glance
 
 - Opening, editing, searching, and saving chapters use the configured local Flask service and manuscript directory.
-- The default `mock` provider is deterministic and does not contact an AI service.
+- The default `hermes` provider invokes the configured local Hermes profile.
+- The `mock` provider is deterministic and does not contact an AI service.
 - The `off` provider disables AI requests entirely.
-- A configured `openai-compatible` provider receives text only when the user explicitly invokes rewrite or question answering.
-- Provider credentials are read by the server from environment variables; they are not stored in manuscript files or sent to the browser.
+- Writing Workbench does not accept or store an AI API key.
 - Writing Workbench includes no account system, analytics, advertising, telemetry, or deliberate tracking request.
 
 ## Data stored on disk
@@ -28,35 +28,34 @@ These collections persist until the user clears them or the browser evicts the o
 
 The History panel's **Clear** action clears both operation history and Q&A messages after confirmation and does not delete manuscript or backup files. Browser site-data controls for the application's origin clear them as well. Changing the host or port creates a different browser origin with separate storage.
 
-## Remote AI data flow
+## Local Hermes data flow
 
-When `WRITING_WORKBENCH_AI_PROVIDER=openai-compatible`, an explicit AI action may send the following to the configured provider:
+When `WRITING_WORKBENCH_AI_PROVIDER=hermes`, an explicit AI action passes the following to the configured local profile:
 
 - text selected for rewriting;
 - rewrite instructions;
 - a question;
 - nearby or manuscript context included in the request;
 - up to the 20 most recent locally stored question-and-answer messages included for continuity;
-- provider-required request metadata.
+- bounded copies of all saved chapters when whole-manuscript analysis is requested.
 
-Simply opening, searching, editing, or saving a chapter does not invoke the provider. A rewrite preview does not save a chapter; replacement first changes the browser buffer, and the user still chooses when to save.
+Simply opening, searching, editing, or saving a chapter does not invoke Hermes. A rewrite preview does not save a chapter; replacement first changes the browser buffer, and the user still chooses when to save. Whole-manuscript analysis reads saved disk versions only and excludes unsaved editor changes.
 
-The remote service is an independent data recipient. Its logging, retention, training, residency, subprocessors, and abuse-monitoring practices are governed by that provider's configuration and terms. Writing Workbench cannot erase provider-side records. Review those terms before enabling it, submit the smallest useful context, and do not send sensitive or regulated material unless the arrangement is appropriate.
+Hermes may use whichever inference backend the selected profile is configured to use. That backend's logging and retention terms remain outside Writing Workbench's control. The workbench does not inspect, copy, or expose the profile's credentials. Review the profile before using it with sensitive manuscripts.
 
-## Credentials and configuration
+## Local-agent configuration
 
-Remote credentials are accepted only through server environment variables. The application must not:
+The Hermes executable and profile name are selected by the server environment. The application must not:
 
-- include a credential in generated HTML, frontend JavaScript, or JSON responses;
-- write a credential to the manuscript directory, backup files, browser storage, or project settings;
-- echo authorization headers or raw provider errors to clients;
-- accept a provider base URL or credential from an ordinary browser AI request.
+- include a profile path, credential, prompt, or raw process error in generated HTML or JSON responses;
+- write Hermes credentials to the manuscript directory, backups, browser storage, or project settings;
+- accept an executable path or profile override from an ordinary browser AI request.
 
-Environment managers, shell history, container configuration, reverse proxies, crash collectors, and process inspection are outside the application and must be secured by the operator. `.env.example` contains placeholders only; a real `.env` must remain untracked.
+Environment managers, shell history, container configuration, crash collectors, and process inspection are outside the application and must be secured by the operator. A real `.env` must remain untracked.
 
 ## Logs
 
-Normal server logs should record operational metadata, not chapter bodies, selected text, questions, provider authorization headers, or raw upstream responses. Debug mode can expose more detail and is intended only for local development with synthetic content.
+Normal server logs should record operational metadata, not chapter bodies, selected text, questions, local-agent prompts, or raw agent output. Debug mode can expose more detail and is intended only for local development with synthetic content.
 
 ## Network exposure
 
@@ -71,10 +70,9 @@ Installing packages may contact Python package repositories. Pulling or building
 - Choose the manuscript directory and protect it with appropriate filesystem permissions and backups.
 - Keep the loopback bind address for local use.
 - Select `off` to prohibit AI calls or `mock` for network-free demonstrations.
-- Before remote AI use, inspect the visible text and context being submitted.
+- Before local-agent use, inspect the configured Hermes profile and understand its inference backend.
 - Use the History panel's **Clear** action to remove both operation records and Q&A messages, or clear browser site data for the application's origin, especially when using a shared browser profile.
 - Remove manuscript and backup directories explicitly when decommissioning an installation.
-- Rotate a provider credential immediately if it may have been exposed.
 
 ## Privacy reports
 

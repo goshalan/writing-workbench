@@ -32,7 +32,7 @@ Every expected API failure has this shape:
 }
 ```
 
-`details` may be omitted. It never includes an API key, absolute manuscript path, stack trace, or raw remote-provider response.
+`details` may be omitted. It never includes an absolute manuscript path, stack trace, local-agent prompt, or raw agent error output.
 
 Common statuses:
 
@@ -45,7 +45,7 @@ Common statuses:
 | `415` | Request body is not JSON |
 | `422` | Request is well-formed but cannot be processed |
 | `428` | An update or delete omitted its expected revision |
-| `502` | Configured remote provider failed |
+| `502` | Configured local agent failed |
 | `503` | AI is disabled or required provider configuration is unavailable |
 
 ## Health
@@ -63,12 +63,12 @@ curl --fail http://127.0.0.1:8787/api/health
   "ok": true,
   "status": "healthy",
   "version": "0.1.0",
-  "provider": "mock",
+  "provider": "hermes",
   "chapter_count": 2
 }
 ```
 
-The provider name is safe capability information. Provider URLs, models, keys, and filesystem paths are not returned.
+The provider name is safe capability information. The Hermes executable, profile path, model, and filesystem paths are not returned.
 
 ## Chapters
 
@@ -244,7 +244,7 @@ Success returns `ok`, `deleted`, the deleted chapter metadata, and backup inform
 
 ## AI assistance
 
-AI routes never receive or return provider credentials. In `mock` mode they are deterministic and local. In `off` mode they return `503 ai_provider_disabled`. In `openai-compatible` mode, supplied text and context are transmitted to the configured remote provider.
+AI routes never receive or return local-agent configuration. In `hermes` mode they invoke the configured local profile. In `mock` mode they are deterministic and local. In `off` mode they return `503 ai_provider_disabled`.
 
 ### `POST /api/ai/rewrite`
 
@@ -299,7 +299,31 @@ Answers a question using only the context supplied with the request plus the con
 }
 ```
 
-Clients should display which provider mode handled the response and should remind users that remote mode transmits the submitted fields outside the local application.
+Clients should display which provider mode handled the response. Merely opening, editing, or saving a chapter never invokes the local agent.
+
+### `POST /api/ai/analyze`
+
+Explicitly analyzes all saved chapters. The server reads chapters in natural chapter order, applies a bounded per-chapter context budget, and invokes the selected local provider. Unsaved browser edits are not included.
+
+```json
+{
+  "language": "en"
+}
+```
+
+```json
+{
+  "ok": true,
+  "provider": "hermes",
+  "report": "## Character Relationships\n...",
+  "analysis": "## Character Relationships\n...",
+  "analyzed_chapters": 12,
+  "truncated": false,
+  "saved_only": true
+}
+```
+
+`language` may be `en` or a Chinese locale such as `zh-CN`; other values fall back to Simplified Chinese. The report is advisory and does not modify or save any chapter.
 
 ## Filename rules
 

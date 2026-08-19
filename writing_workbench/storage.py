@@ -29,6 +29,21 @@ CHAPTER_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*|[\u3400-\u9fff]", re.UNICODE)
+CHINESE_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+CHINESE_UNITS = {"十": 10, "百": 100, "千": 1_000}
 
 DEFAULT_EXAMPLES = {
     "第一章_灯塔来信.md": """# 第一章 灯塔来信
@@ -61,6 +76,23 @@ def count_words(text: str) -> int:
     """
 
     return len(TOKEN_RE.findall(text))
+
+
+def chapter_number(value: str) -> int | None:
+    if value.isdigit():
+        return int(value)
+    total = 0
+    digit = 0
+    for character in value:
+        if character in CHINESE_DIGITS:
+            digit = CHINESE_DIGITS[character]
+        elif character in CHINESE_UNITS:
+            total += (digit or 1) * CHINESE_UNITS[character]
+            digit = 0
+        else:
+            return None
+    result = total + digit
+    return result or None
 
 
 def validate_filename(value: object) -> str:
@@ -242,7 +274,7 @@ class ManuscriptStore:
             raise APIError("无法读取章节元数据", 500, "read_failed") from error
         modified_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds")
         match = CHAPTER_NUMBER_RE.match(path.stem)
-        chapter_number = int(match.group(1)) if match and match.group(1).isdigit() else None
+        number = chapter_number(match.group(1)) if match else None
         return {
             "filename": path.name,
             "name": path.name,
@@ -253,7 +285,7 @@ class ManuscriptStore:
             "word_count": count_words(content),
             "sha256": sha256_bytes(data),
             "modified_at": modified_at,
-            "chapter_number": chapter_number,
+            "chapter_number": number,
         }
 
     @staticmethod

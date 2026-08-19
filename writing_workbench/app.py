@@ -17,6 +17,7 @@ VERSION = "0.1.0"
 DEFAULT_MAX_REQUEST_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_FILE_BYTES = 1_900_000
 DEFAULT_BACKUP_LIMIT = 10
+DEFAULT_ANALYSIS_CONTEXT_CHARS = 100_000
 MAX_REWRITE_TEXT_CHARS = 24_000
 MAX_CONTEXT_CHARS = 80_000
 MAX_QUESTION_CHARS = 12_000
@@ -54,7 +55,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         BACKUP_LIMIT=_env_int("WRITING_WORKBENCH_BACKUP_LIMIT", DEFAULT_BACKUP_LIMIT),
         MANUSCRIPTS_DIR=str(_default_manuscript_dir()),
         CREATE_EXAMPLES=True,
-        AI_PROVIDER=os.environ.get("WRITING_WORKBENCH_AI_PROVIDER", "mock"),
+        AI_PROVIDER=os.environ.get("WRITING_WORKBENCH_AI_PROVIDER", "hermes"),
+        ANALYSIS_CONTEXT_CHARS=_env_int(
+            "WRITING_WORKBENCH_ANALYSIS_CONTEXT_CHARS",
+            DEFAULT_ANALYSIS_CONTEXT_CHARS,
+            minimum=4_000,
+        ),
         JSON_AS_ASCII=False,
     )
     if test_config:
@@ -198,6 +204,41 @@ def _history(payload: dict[str, Any]) -> list[dict[str, str]]:
     return result
 
 
+def _language(payload: dict[str, Any]) -> str:
+    requested = str(payload.get("language") or "zh-CN").strip().lower()
+    return "en" if requested.startswith("en") else "zh-CN"
+
+
+def _clip_chapter(content: str, budget: int) -> tuple[str, bool]:
+    if len(content) <= budget:
+        return content, False
+    marker = "\n\n[… middle of this chapter omitted …]\n\n"
+    available = max(0, budget - len(marker))
+    head = available // 2
+    return content[:head] + marker + content[-(available - head) :], True
+
+
+def _analysis_manuscript(store: ManuscriptStore, max_chars: int) -> tuple[str, int, bool]:
+    chapters = store.list(sort="name", order="asc")
+    if not chapters:
+        raise APIError("没有可分析的已保存章节", 400, "chapters_required")
+    marker_budget = sum(len(item["title"]) + 16 for item in chapters)
+    content_budget = max(1_000 * len(chapters), max_chars - marker_budget)
+    per_chapter = max(1_000, content_budget // len(chapters))
+    sections: list[str] = []
+    truncated = False
+    for item in chapters:
+        _metadata, content = store.read(item["filename"])
+        clipped, was_truncated = _clip_chapter(content, per_chapter)
+        truncated = truncated or was_truncated
+        sections.append(f"=== {item['title']} ===\n{clipped.strip()}")
+    manuscript = "\n\n".join(sections)
+    if len(manuscript) > max_chars:
+        manuscript = manuscript[:max_chars]
+        truncated = True
+    return manuscript, len(chapters), truncated
+
+
 def register_routes(app: Flask) -> None:
     @app.after_request
     def add_security_headers(response):
@@ -312,7 +353,12 @@ def register_routes(app: Flask) -> None:
         instruction = _optional_text(payload, "instruction", max_chars=2_000).strip()
         context = _optional_text(payload, "context", max_chars=MAX_CONTEXT_CHARS)
         provider = build_provider(app.config["AI_PROVIDER"])
-        result = provider.rewrite(text=text, instruction=instruction, context=context)
+        result = provider.rewrite(
+            text=text,
+            instruction=instruction,
+            context=context,
+            language=_language(payload),
+        )
         return jsonify(
             {
                 "ok": True,
@@ -337,12 +383,42 @@ def register_routes(app: Flask) -> None:
         context = _optional_text(payload, "context", max_chars=MAX_CONTEXT_CHARS)
         history = _history(payload)
         provider = build_provider(app.config["AI_PROVIDER"])
-        answer = provider.ask(question=question, context=context, history=history)
+        answer = provider.ask(
+            question=question,
+            context=context,
+            history=history,
+            language=_language(payload),
+        )
         return jsonify(
             {
                 "ok": True,
                 "provider": provider.name,
                 "answer": answer,
                 "reply": answer,
+            }
+        )
+
+    @app.post("/api/ai/analyze")
+    def analyze():
+        payload = _optional_json_object()
+        manuscript, chapter_count, truncated = _analysis_manuscript(
+            _store(app),
+            app.config["ANALYSIS_CONTEXT_CHARS"],
+        )
+        provider = build_provider(app.config["AI_PROVIDER"])
+        report = provider.analyze(
+            manuscript=manuscript,
+            chapter_count=chapter_count,
+            language=_language(payload),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "provider": provider.name,
+                "report": report,
+                "analysis": report,
+                "analyzed_chapters": chapter_count,
+                "truncated": truncated,
+                "saved_only": True,
             }
         )

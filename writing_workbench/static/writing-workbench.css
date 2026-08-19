@@ -1182,7 +1182,7 @@ kbd {
 
 .tabs {
   align-self: stretch;
-  gap: 16px;
+  gap: 12px;
 }
 
 .tab {
@@ -1193,6 +1193,8 @@ kbd {
   color: var(--quiet);
   background: transparent;
   cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .tab::after {
@@ -1218,6 +1220,86 @@ kbd {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
+}
+
+.analysis-view {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.analysis-intro {
+  display: grid;
+  gap: 10px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.analysis-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.analysis-intro .analysis-kicker {
+  margin-bottom: 4px;
+  color: var(--ivory-soft);
+  font-family: var(--prose-font);
+  font-size: 15px;
+}
+
+.analysis-intro .analysis-safety {
+  padding: 8px 10px;
+  border-left: 2px solid var(--jade-deep);
+  color: var(--quiet);
+  background: #0a1310;
+}
+
+.analysis-result-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  color: var(--ivory-soft);
+  font-size: 12px;
+}
+
+.analysis-result-heading span:last-child {
+  color: var(--quiet);
+  font-size: 10px;
+  text-align: right;
+}
+
+.analysis-result {
+  min-height: 0;
+  margin: 0 20px 18px;
+  padding: 13px 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ivory-soft);
+  background: #0a1310;
+  font-family: var(--prose-font);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  scrollbar-color: #3a4842 transparent;
+  scrollbar-width: thin;
+}
+
+.analysis-result.is-ready {
+  border-color: #356b59;
+}
+
+.analysis-result.is-loading {
+  color: var(--jade-soft);
+}
+
+.analysis-result.is-error {
+  color: #e7aaa0;
+  border-color: var(--danger-deep);
 }
 
 .chat-log,
@@ -1679,6 +1761,8 @@ kbd {
   .rewrite-panel { padding-inline: 16px; }
   .assistant-heading > div { display: block; }
   .selection-status { display: block; margin-top: 4px; }
+  .chat-heading h2 { display: none; }
+  .tabs { width: 100%; justify-content: space-between; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -54,7 +54,7 @@ If you change behavior, add or update tests. Security-sensitive changes should c
 - request and file-size limits;
 - stale SHA-256 revisions and `409` responses;
 - backup creation, rotation, and write-failure behavior;
-- mock and off provider modes;
+- Hermes, mock, and off provider modes;
 - assurance that credentials and absolute paths never enter API responses.
 
 For interface work, also test keyboard-only use, narrow and wide viewports, unsaved-change warnings, rewrite preview/replace/undo, and conflict recovery.
@@ -66,8 +66,8 @@ Prefer small, reviewable changes. Keep these constraints intact unless a proposa
 - core editing remains offline-capable;
 - `.md` and `.txt` remain the durable manuscript formats;
 - default networking remains loopback-only;
-- remote AI remains optional and clearly disclosed;
-- provider secrets remain server-side and environment-only;
+- local-agent AI remains optional and clearly disclosed;
+- profile paths, prompts, and raw process failures remain server-side;
 - chapter writes remain atomic, revision-checked, and backed up;
 - the browser receives no arbitrary local path.
 
@@ -89,7 +89,7 @@ Maintainers may ask for a smaller scope, additional tests, or a design discussio
 
 Use invented names and synthetic prose. Do not submit copyrighted book passages, unpublished manuscripts, personal correspondence, access tokens, credentials, private endpoints, or screenshots containing private browser or desktop state.
 
-When demonstrating a remote provider, replace every credential with an unmistakable placeholder and inspect both the working tree and Git history before pushing.
+When demonstrating a Hermes profile, use synthetic manuscript text and inspect both the working tree and Git history before pushing. Never commit profile credentials or copied auth files.
 
 ## Documentation
 

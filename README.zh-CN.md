@@ -4,7 +4,7 @@
 
 写书工具台是一个轻量、本地优先的 Markdown/TXT 长篇写作工作区。它把章节导航、专注编辑、修改辅助和明确的保存安全机制放进一个可自行运行的 Flask 应用中。
 
-核心写作流程可离线使用。AI 功能完全可选：项目自带不会联网的确定性 mock provider，只有在作者主动配置 OpenAI-compatible provider 并发起操作时才会请求远程服务。
+核心写作流程可离线使用。AI 功能完全可选，默认调用本机 Hermes agent；项目也保留不会联网的确定性 mock provider。Writing Workbench 本身不需要 API Key。
 
 > 截图占位说明：首次公开发布前，请使用项目自带的虚构示例书稿截取三栏工作区。截图中不得出现浏览器书签、本地路径、通知、账号或 provider 凭据；将清理后的图片放入 `docs/images/`，再在这里加入链接。
 
@@ -24,6 +24,8 @@
 - 提供字数统计、未保存提醒和常用快捷键。
 - 支持 AI 改写预览、替换和撤销。
 - 可围绕明确提交的书稿上下文进行书情问答。
+- 可分析全部已保存章节的人物关系、伏笔、连续性风险，并给出下一章建议。
+- 根据浏览器及操作系统语言偏好自动选择英文或简体中文界面。
 - 在当前浏览器的 localStorage 中保留最多 60 条操作历史和 30 条问答消息，并提供界面内清空操作。
 - 提供健康检查接口和一致的结构化错误。
 
@@ -81,23 +83,21 @@ Compose 默认将服务发布到 <http://127.0.0.1:8000>，书稿保存在本地
 | `WRITING_WORKBENCH_MAX_REQUEST_BYTES` | `2097152` | 请求体字节上限 |
 | `WRITING_WORKBENCH_MAX_FILE_BYTES` | `1900000` | 单章字节上限 |
 | `WRITING_WORKBENCH_BACKUP_LIMIT` | `10` | 每章最多保留的备份数 |
-| `WRITING_WORKBENCH_AI_PROVIDER` | `mock` | `mock`、`off` 或 `openai-compatible` |
-| `WRITING_WORKBENCH_OPENAI_BASE_URL` | `https://api.openai.com/v1` | 明确选用的兼容 API 基础地址 |
-| `WRITING_WORKBENCH_OPENAI_API_KEY` | 未设置 | provider 密钥，只由服务端进程读取 |
-| `WRITING_WORKBENCH_OPENAI_MODEL` | 未设置 | provider 模型标识 |
-| `WRITING_WORKBENCH_AI_TIMEOUT` | `30` | 远程 provider 超时秒数 |
+| `WRITING_WORKBENCH_AI_PROVIDER` | `hermes` | `hermes`、`mock` 或 `off` |
+| `WRITING_WORKBENCH_HERMES_COMMAND` | 从 `PATH` 自动发现 | 本机 Hermes 可执行文件 |
+| `WRITING_WORKBENCH_HERMES_PROFILE` | 空 | 可选的隔离 Hermes profile；留空时使用 Hermes 当前默认 profile |
+| `WRITING_WORKBENCH_AI_TIMEOUT` | `120` | 本机 agent 超时秒数 |
+| `WRITING_WORKBENCH_ANALYSIS_CONTEXT_CHARS` | `100000` | 单次全书分析最多读取的已保存书稿字符数 |
 
-应用配置统一使用 `WRITING_WORKBENCH_` 前缀。远程 provider 也兼容 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_MODEL`；建议优先使用带项目前缀的变量，避免冲突。
+应用配置统一使用 `WRITING_WORKBENCH_` 前缀。浏览器不能更改 Hermes 命令或 profile。
 
 占位配置见 [.env.example](.env.example)。请导出这些变量或交给进程管理器设置；应用本身不会自动加载 `.env`。不要提交填写后的 `.env`。
 
-## 可选 AI provider
+## 本机 AI provider
 
-`mock` 用于本地演示，不会发出网络请求；`off` 禁用 AI 请求；`openai-compatible` 会请求所配置远程基础地址下的 `/chat/completions`，该接口需接受配置的模型。
+`hermes` 会以子进程调用指定的本机 Hermes profile；`mock` 用于确定性本地演示，不会联网；`off` 禁用 AI 请求。Hermes 调用只开放非修改型工具集、忽略工作区规则，并要求把书稿视作不可信内容而不是指令。
 
-启用远程 provider 后，用户为改写选中的文字、改写指令、问题、该请求附带的书稿上下文，以及用于保持问答连续性的最近最多 20 条问答消息，会发送给所配置的 provider。仅打开或保存章节不会发送任何书稿。请先阅读 provider 的条款与数据保留政策，只提交完成任务所需的最小上下文；除非你接受这项披露，不要发送敏感书稿。
-
-API key 始终留在服务端：只从环境变量读取，不由写书工具台持久化，也不会出现在前端配置或 API 响应中。
+执行 AI 操作时，只会把所需文本交给本机 Hermes 进程：改写使用选中文本与附近上下文，问答使用当前章节与最近对话，全书分析使用经过长度限制的全部已保存章节。仅打开、编辑或保存章节不会调用 Hermes；全书分析也不会包含编辑器中的未保存改动。
 
 ## 安全与隐私模型
 
@@ -107,7 +107,7 @@ API key 始终留在服务端：只从环境变量读取，不由写书工具台
 - 只接受书稿根目录内的简单 `.md`、`.txt` 文件名。
 - 在解析 JSON 前限制请求大小。
 - 保存必须携带上次读取时得到的 SHA-256 版本标识；写入使用临时文件、原子替换，并备份旧版本。
-- 除非用户在启用远程 provider 后主动发起 AI 操作，书稿文本保留在本地。
+- 书稿文本保留在本应用与本机 Hermes 的边界内，只有用户主动执行 AI 操作时才会调用本地 agent。
 - 当前来源的浏览器 localStorage 会保留最多 60 条操作记录和 30 条问答消息。操作记录可能包含章节标题以及较短的改写或问答摘要；每条问答消息最多保存 4,000 个字符。这些数据会一直保留到用户清除或浏览器将其回收。历史面板中的“清空”会同时清空两类记录，但不会删除稿件；也可通过浏览器的网站数据设置清除。未保存的编辑器缓冲区不会作为书稿备份存入其中。
 
 不要把开发服务器直接暴露到公网或不可信网络。共享部署至少还需认证、TLS、CSRF 防护、生产级 WSGI server、限流和明确的授权模型。详见 [SECURITY.md](SECURITY.md) 与 [PRIVACY.md](PRIVACY.md)。
@@ -121,7 +121,7 @@ API key 始终留在服务端：只从环境变量读取，不由写书工具台
         │ 回环 HTTP 上的 JSON
 Flask 路由与结构化错误
         ├── 安全章节存储 ── 书稿文件与轮换备份
-        └── provider 接口 ── mock/off 或可选远程 API
+        └── provider 接口 ── 本机 Hermes / mock / off
 ```
 
 章节存储层统一负责文件名验证、版本计算、备份轮换与原子写入。provider adapter 共用小型接口，使编辑流程不依赖任何 AI 服务。设计细节和信任边界见 [docs/architecture.md](docs/architecture.md)。
@@ -135,6 +135,7 @@ JSON API 包括：
 - `GET, PUT, DELETE /api/chapters/<filename>`
 - `POST /api/ai/rewrite`
 - `POST /api/ai/ask`
+- `POST /api/ai/analyze`
 
 保存时需携带上次读取返回的版本标识。文件若已被其他客户端更改，服务端返回 `409 conflict` 和当前版本，客户端应明确选择重新加载或人工合并。请求与响应示例见 [docs/api.md](docs/api.md)。
 
@@ -145,7 +146,7 @@ JSON API 包括：
 - 在界面中浏览并恢复备份。
 - 导出到少量开放且有文档的格式。
 - 增加带能力检测的可插拔本地推理 adapter。
-- 界面字符串国际化与社区维护的翻译。
+- 增加英文和简体中文以外的社区翻译。
 
 路线图只是提案，不代表已经完成或承诺交付。投入大型改动前，请先提交 feature request 讨论。
 

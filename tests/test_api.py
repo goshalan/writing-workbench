@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from writing_workbench import create_app
+from writing_workbench import create_app, providers
 from writing_workbench.cli import build_parser
 
 
@@ -67,8 +68,10 @@ def test_first_start_creates_neutral_examples(tmp_path: Path) -> None:
     response = app.test_client().get("/api/chapters")
 
     assert response.status_code == 200
-    names = {item["filename"] for item in response.get_json()["chapters"]}
+    chapter_items = response.get_json()["chapters"]
+    names = {item["filename"] for item in chapter_items}
     assert names == {"第一章_灯塔来信.md", "第二章_清晨渡口.txt"}
+    assert [item["chapter_number"] for item in chapter_items] == [1, 2]
     examples = [path for path in directory.glob("*.*") if path.is_file()]
     combined = "\n".join(path.read_text() for path in examples)
     assert "Alan" not in combined
@@ -83,6 +86,11 @@ def test_security_headers_cover_html_and_api(client) -> None:
         assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
         assert response.headers["X-Frame-Options"] == "DENY"
         assert "camera=()" in response.headers["Permissions-Policy"]
+
+    html = client.get("/").get_data(as_text=True)
+    assert "i18n.js" in html
+    assert 'id="analysisTab"' in html
+    assert 'data-i18n="assistant.analysis"' in html
 
 
 @pytest.mark.parametrize(
@@ -242,6 +250,28 @@ def test_mock_provider_rewrite_and_ask_are_network_free(client) -> None:
     assert "下一场戏如何推进" in ask.get_json()["answer"]
 
 
+def test_mock_provider_analyzes_all_saved_chapters(client) -> None:
+    create_chapter(client, "第一章_来信.md", "# 第一章 来信\n林遥收到一封没有署名的信。")
+    create_chapter(client, "第二章_灯塔.md", "# 第二章 灯塔\n她决定在日出前点亮旧灯。")
+
+    response = client.post("/api/ai/analyze", json={"language": "zh-CN"})
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["provider"] == "mock"
+    assert payload["analyzed_chapters"] == 2
+    assert payload["saved_only"] is True
+    assert "人物关系" in payload["report"]
+    assert "下一章建议" in payload["report"]
+
+
+def test_analysis_requires_a_saved_chapter(client) -> None:
+    response = client.post("/api/ai/analyze", json={"language": "en"})
+
+    assert response.status_code == 400
+    assert error_code(response) == "chapters_required"
+
+
 def test_off_provider_returns_structured_503(manuscript_dir: Path) -> None:
     app = create_app(
         {
@@ -257,23 +287,48 @@ def test_off_provider_returns_structured_503(manuscript_dir: Path) -> None:
     assert error_code(response) == "ai_provider_disabled"
 
 
-def test_openai_credentials_are_not_returned(monkeypatch, manuscript_dir: Path) -> None:
-    secret = "test-secret-that-must-not-leak"
-    monkeypatch.setenv("WRITING_WORKBENCH_OPENAI_API_KEY", secret)
-    monkeypatch.setenv("WRITING_WORKBENCH_OPENAI_MODEL", "example-model")
+def test_hermes_provider_uses_local_profile_without_api_key(
+    monkeypatch, manuscript_dir: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0, stdout="Local Hermes reply\n", stderr="")
+
+    monkeypatch.setattr(providers.subprocess, "run", fake_run)
+    monkeypatch.setenv("WRITING_WORKBENCH_HERMES_COMMAND", "/opt/local/bin/hermes")
+    monkeypatch.setenv("WRITING_WORKBENCH_HERMES_PROFILE", "workbench-test")
     app = create_app(
         {
             "TESTING": True,
             "MANUSCRIPTS_DIR": str(manuscript_dir),
             "CREATE_EXAMPLES": False,
-            "AI_PROVIDER": "openai-compatible",
+            "AI_PROVIDER": "hermes",
         }
     )
 
-    raw = app.test_client().get("/api/health").get_data(as_text=True)
+    response = app.test_client().post(
+        "/api/ai/ask",
+        json={"question": "What comes next?", "context": "A letter arrives.", "language": "en"},
+    )
+    command = captured["command"]
 
-    assert secret not in raw
-    assert "example-model" not in raw
+    assert response.status_code == 200
+    assert response.get_json()["answer"] == "Local Hermes reply"
+    assert command[:3] == ["/opt/local/bin/hermes", "--profile", "workbench-test"]
+    assert "--ignore-rules" in command
+    assert command[command.index("--toolsets") + 1] == "vision"
+    assert "--oneshot" in command
+
+
+def test_hermes_provider_uses_current_profile_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("WRITING_WORKBENCH_HERMES_PROFILE", raising=False)
+
+    provider = providers.build_provider("hermes")
+
+    assert provider.profile == ""
 
 
 def test_request_body_limit_returns_structured_413(tmp_path: Path) -> None:

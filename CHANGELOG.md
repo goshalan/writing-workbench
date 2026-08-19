@@ -14,7 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - SHA-256 optimistic concurrency, atomic replacement, pre-save backups, and backup rotation.
 - Word and character counts, unsaved-change warnings, keyboard shortcuts, and browser-local recent history.
 - AI rewrite preview/replace/undo and manuscript question answering.
-- Network-free mock provider, explicit off mode, and optional OpenAI-compatible provider configuration.
+- Whole-manuscript AI analysis for character relationships, foreshadowing, continuity risks, and next-chapter suggestions.
+- Automatic English and Simplified Chinese UI selection based on browser/operating-system language preferences.
+- Local Hermes agent provider, network-free mock provider, and explicit off mode; no API key is required by Writing Workbench.
 - Structured JSON errors and a health endpoint.
 - English and Simplified Chinese documentation, security and privacy policies, community templates, CI, container configuration, and tests.
 
