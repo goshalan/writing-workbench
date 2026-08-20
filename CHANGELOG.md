@@ -20,4 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Structured JSON errors and a health endpoint.
 - English and Simplified Chinese documentation, security and privacy policies, community templates, CI, container configuration, and tests.
 
+### Changed
+
+- Reworked the writing workspace with a responsive liquid-glass visual system and independently usable editor and assistant regions.
+- Display the configured book title and meaningful progress metadata through the health endpoint.
+- Hide YAML front matter and a duplicate first-level Markdown title from the prose editor while preserving them on save.
+- Prefer the latest numbered chapter when the workspace opens and use document headings for friendly chapter titles.
+
 No release has been published yet. Add a real comparison link only after the public repository URL and first tag exist.

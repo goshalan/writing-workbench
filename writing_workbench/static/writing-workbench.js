@@ -9,6 +9,7 @@
   var REWRITE_TEXT_LIMIT = 24000;
   var CONTEXT_LIMIT = 60000;
   var i18n = window.WritingWorkbenchI18n;
+  var API_BASE = document.documentElement.dataset.basePath || "";
 
   if (!i18n) {
     throw new Error("Writing Workbench i18n failed to load");
@@ -25,6 +26,8 @@
     activeSha256: "",
     activeMeta: null,
     loadedContent: "",
+    documentPrefix: "",
+    bookTitle: "Writing Workbench",
     sortKey: "name",
     sortOrder: "asc",
     provider: "unknown",
@@ -62,6 +65,7 @@
     chapterErrorText: byId("chapterErrorText"),
     retryChaptersButton: byId("retryChaptersButton"),
     chapterCount: byId("chapterCount"),
+    bookLabel: byId("bookLabel"),
     editorTitle: byId("editorTitle"),
     chapterMetadata: byId("chapterMetadata"),
     editorPlaceholder: byId("editorPlaceholder"),
@@ -158,7 +162,8 @@
 
     var response;
     try {
-      response = await fetch(url, requestOptions);
+      var requestUrl = API_BASE && url.charAt(0) === "/" ? API_BASE + url : url;
+      response = await fetch(requestUrl, requestOptions);
     } catch (_error) {
       throw new RequestError(t("status.network"), 0, "network_error");
     }
@@ -274,6 +279,13 @@
       .trim() || t("chapters.unnamed");
   }
 
+  function chapterListTitle(chapter) {
+    return chapterTitle(chapter).replace(
+      /^第\s*(?:\d+|[零〇一二三四五六七八九十百千两]+)\s*章[\s:_\-—]*/,
+      ""
+    ) || chapterTitle(chapter);
+  }
+
   function normalizeChapter(value) {
     var item = typeof value === "string" ? { filename: value } : value || {};
     return {
@@ -385,7 +397,7 @@
       var copy = document.createElement("span");
       copy.className = "chapter-row-copy";
       var title = document.createElement("strong");
-      title.textContent = chapter.title;
+      title.textContent = chapterListTitle(chapter);
       var meta = document.createElement("small");
       meta.textContent = t("chapters.rowMeta", {
         format: (chapter.extension || ".txt").slice(1).toUpperCase(),
@@ -425,8 +437,9 @@
       if (target && exists && settings.open !== false) {
         await loadChapter(target, { force: true, record: settings.record !== false });
       } else if (!state.activeFilename && state.chapters.length && settings.open !== false) {
-        var first = visibleChapters()[0] || state.chapters[0];
-        await loadChapter(first.filename, { force: true, record: settings.record !== false });
+        var ordered = visibleChapters();
+        var current = ordered[ordered.length - 1] || state.chapters[state.chapters.length - 1];
+        await loadChapter(current.filename, { force: true, record: settings.record !== false });
       } else if (!state.chapters.length) {
         clearEditor();
       }
@@ -442,6 +455,7 @@
     state.activeSha256 = "";
     state.activeMeta = null;
     state.loadedContent = "";
+    state.documentPrefix = "";
     state.selection = null;
     state.rewrite = null;
     state.replacementUndo = [];
@@ -466,6 +480,31 @@
       return payload.chapter.content;
     }
     return "";
+  }
+
+  function splitDocumentContent(content) {
+    var source = String(content || "");
+    var cursor = 0;
+    var frontMatter = source.match(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+    if (frontMatter) {
+      cursor = frontMatter[0].length;
+    }
+    var blankLine;
+    while ((blankLine = source.slice(cursor).match(/^\r?\n/))) {
+      cursor += blankLine[0].length;
+    }
+    var title = source.slice(cursor).match(/^[ \t]*#[ \t]+[^\r\n]+[ \t]*(?:\r?\n|$)/);
+    if (title) {
+      cursor += title[0].length;
+    }
+    while ((blankLine = source.slice(cursor).match(/^\r?\n/))) {
+      cursor += blankLine[0].length;
+    }
+    return { prefix: source.slice(0, cursor), body: source.slice(cursor) };
+  }
+
+  function documentContent() {
+    return state.documentPrefix + (el.editor.value || "");
   }
 
   function extractChapter(payload, fallbackFilename) {
@@ -504,15 +543,17 @@
       var payload = await api(chapterUrl(filename));
       var chapter = extractChapter(payload, filename);
       var content = extractContent(payload);
+      var documentParts = splitDocumentContent(content);
       state.activeFilename = chapter.filename || filename;
       state.activeSha256 = chapter.sha256 || String(payload.sha256 || "");
       state.activeMeta = chapter;
-      state.loadedContent = content;
+      state.loadedContent = documentParts.body;
+      state.documentPrefix = documentParts.prefix;
       state.selection = null;
       state.rewrite = null;
       state.replacementUndo = [];
       state.conflict = false;
-      el.editor.value = content;
+      el.editor.value = documentParts.body;
       el.editor.disabled = false;
       el.editorTitle.textContent = chapter.title;
       el.chapterMetadata.textContent = (chapter.extension || ".txt").slice(1).toUpperCase() + " · " + formatBytes(chapter.size_bytes);
@@ -529,6 +570,7 @@
       requestAnimationFrame(function () {
         el.editor.focus();
         el.editor.setSelectionRange(0, 0);
+        el.editor.scrollTop = 0;
       });
     } catch (error) {
       toast(error.message || t("status.loadFailed"), "error");
@@ -642,7 +684,8 @@
     el.conflictBanner.hidden = true;
     setButtonBusy(el.saveButton, true, t("status.saving"));
     updateEditorState();
-    var contentToSave = el.editor.value;
+    var editorBodyToSave = el.editor.value;
+    var contentToSave = documentContent();
     try {
       var payload = await api(chapterUrl(state.activeFilename), {
         method: "PUT",
@@ -652,7 +695,7 @@
         })
       });
       var chapter = extractChapter(payload, state.activeFilename);
-      state.loadedContent = typeof payload.content === "string" ? payload.content : contentToSave;
+      state.loadedContent = editorBodyToSave;
       state.activeSha256 = chapter.sha256 || String(payload.sha256 || state.activeSha256);
       state.activeMeta = chapter;
       state.conflict = false;
@@ -1287,6 +1330,12 @@
   async function loadProviderStatus() {
     try {
       var payload = await api("/api/health");
+      state.bookTitle = String(payload.book_title || "Writing Workbench");
+      if (el.bookLabel) {
+        el.bookLabel.textContent = state.bookTitle;
+        el.bookLabel.title = state.bookTitle;
+      }
+      document.title = state.bookTitle + " · " + t("app.title");
       updateProvider(payload.provider || (payload.ai && payload.ai.provider) || "unknown");
     } catch (error) {
       updateProvider("unknown");
@@ -1373,7 +1422,7 @@
     el.saveButton.addEventListener("click", saveChapter);
     el.undoButton.addEventListener("click", function () { nativeEdit("undo"); });
     el.redoButton.addEventListener("click", function () { nativeEdit("redo"); });
-    el.copyConflictButton.addEventListener("click", function () { copyText(el.editor.value); });
+    el.copyConflictButton.addEventListener("click", function () { copyText(documentContent()); });
     el.reloadConflictButton.addEventListener("click", reloadAfterConflict);
 
     el.instruction.addEventListener("input", function () {

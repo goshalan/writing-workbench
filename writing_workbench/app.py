@@ -11,7 +11,7 @@ from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from .errors import APIError
 from .providers import build_provider, normalize_provider_name
-from .storage import ManuscriptStore
+from .storage import ManuscriptStore, manuscript_body
 
 VERSION = "0.1.0"
 DEFAULT_MAX_REQUEST_BYTES = 2 * 1024 * 1024
@@ -35,6 +35,13 @@ def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _default_manuscript_dir() -> Path:
     configured = os.environ.get("WRITING_WORKBENCH_DIR")
     return Path(configured).expanduser() if configured else Path.cwd() / "manuscripts"
@@ -54,7 +61,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         MAX_FILE_BYTES=_env_int("WRITING_WORKBENCH_MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES),
         BACKUP_LIMIT=_env_int("WRITING_WORKBENCH_BACKUP_LIMIT", DEFAULT_BACKUP_LIMIT),
         MANUSCRIPTS_DIR=str(_default_manuscript_dir()),
-        CREATE_EXAMPLES=True,
+        CREATE_EXAMPLES=_env_bool("WRITING_WORKBENCH_CREATE_EXAMPLES", True),
+        BOOK_TITLE=os.environ.get("WRITING_WORKBENCH_BOOK_TITLE", "").strip(),
+        TARGET_WORDS=_env_int("WRITING_WORKBENCH_TARGET_WORDS", 80_000),
+        SUITE_HOME_URL=os.environ.get("WRITING_WORKBENCH_SUITE_HOME_URL", "").strip(),
+        SUITE_HOME_LABEL=os.environ.get(
+            "WRITING_WORKBENCH_SUITE_HOME_LABEL", "Back to local tools"
+        ).strip(),
+        SUITE_MARK=os.environ.get("WRITING_WORKBENCH_SUITE_MARK", "WW").strip(),
         AI_PROVIDER=os.environ.get("WRITING_WORKBENCH_AI_PROVIDER", "hermes"),
         ANALYSIS_CONTEXT_CHARS=_env_int(
             "WRITING_WORKBENCH_ANALYSIS_CONTEXT_CHARS",
@@ -74,6 +88,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     )
     store.initialize()
     app.extensions["manuscript_store"] = store
+    if not app.config["BOOK_TITLE"]:
+        root = Path(app.config["MANUSCRIPTS_DIR"]).expanduser()
+        app.config["BOOK_TITLE"] = (
+            root.parent.name if root.name.lower() in {"正文", "chapters"} else root.name
+        ) or "Writing Workbench"
 
     register_error_handlers(app)
     register_routes(app)
@@ -229,7 +248,7 @@ def _analysis_manuscript(store: ManuscriptStore, max_chars: int) -> tuple[str, i
     truncated = False
     for item in chapters:
         _metadata, content = store.read(item["filename"])
-        clipped, was_truncated = _clip_chapter(content, per_chapter)
+        clipped, was_truncated = _clip_chapter(manuscript_body(content), per_chapter)
         truncated = truncated or was_truncated
         sections.append(f"=== {item['title']} ===\n{clipped.strip()}")
     manuscript = "\n\n".join(sections)
@@ -276,7 +295,8 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/api/health")
     def health():
-        chapter_count = _store(app).count()
+        chapters = _store(app).list(sort="name", order="asc")
+        chapter_count = len(chapters)
         provider_name = normalize_provider_name(app.config["AI_PROVIDER"])
         return jsonify(
             {
@@ -285,6 +305,9 @@ def register_routes(app: Flask) -> None:
                 "version": VERSION,
                 "provider": provider_name,
                 "chapter_count": chapter_count,
+                "book_title": app.config["BOOK_TITLE"],
+                "target_words": app.config["TARGET_WORDS"],
+                "total_words": sum(item["word_count"] for item in chapters),
             }
         )
 

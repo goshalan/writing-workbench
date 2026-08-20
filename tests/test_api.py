@@ -78,6 +78,36 @@ def test_first_start_creates_neutral_examples(tmp_path: Path) -> None:
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in examples)
 
 
+def test_health_and_metadata_use_book_config_and_prose_only(tmp_path: Path) -> None:
+    directory = tmp_path / "chapters"
+    directory.mkdir()
+    (directory / "第001章_来信.md").write_text(
+        "---\nproject: test\nstatus: draft\n---\n\n# 第一章 来信\n\n林遥收到一封信。\n",
+        encoding="utf-8",
+    )
+    configured = create_app(
+        {
+            "TESTING": True,
+            "MANUSCRIPTS_DIR": str(directory),
+            "CREATE_EXAMPLES": False,
+            "AI_PROVIDER": "mock",
+            "BOOK_TITLE": "测试书稿",
+            "TARGET_WORDS": 120_000,
+        }
+    )
+
+    client = configured.test_client()
+    health = client.get("/api/health").get_json()
+    chapter = client.get("/api/chapters").get_json()["chapters"][0]
+
+    assert health["book_title"] == "测试书稿"
+    assert health["target_words"] == 120_000
+    assert health["total_words"] == 7
+    assert chapter["title"] == "第一章 来信"
+    assert chapter["word_count"] == 7
+    assert chapter["character_count"] == 9
+
+
 def test_security_headers_cover_html_and_api(client) -> None:
     for endpoint in ("/", "/api/health"):
         response = client.get(endpoint)

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-base-path="{{ request.script_root }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1210">
-  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#edf3f1">
+  <meta name="color-scheme" content="light">
   <meta name="description" content="Writing Workbench 是一个本地优先的 Markdown 与 TXT 写作工具台。">
   <title>Writing Workbench / 写书工具台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='writing-workbench.css') }}">
@@ -17,9 +17,12 @@
   <main class="workbench" aria-labelledby="appTitle">
     <header class="topbar">
       <div class="brand-lockup">
+        {% if config.SUITE_HOME_URL %}
+        <a class="suite-back-link" href="{{ config.SUITE_HOME_URL }}" aria-label="{{ config.SUITE_HOME_LABEL }}">{{ config.SUITE_MARK }}</a>
+        {% endif %}
         <h1 id="appTitle" data-i18n="app.title">Writing Workbench</h1>
         <span class="vertical-rule" aria-hidden="true"></span>
-        <p class="book-label" data-i18n-title="app.localManuscript" title="Current local manuscript">Writing Workbench</p>
+        <p class="book-label" id="bookLabel" data-i18n-title="app.localManuscript" title="Current local manuscript">Writing Workbench</p>
       </div>
 
       <div class="save-state is-saved" id="saveState" role="status" aria-live="polite">

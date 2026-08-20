@@ -62,6 +62,9 @@ DEFAULT_EXAMPLES = {
 """,
 }
 
+FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|\Z)")
+MARKDOWN_TITLE_RE = re.compile(r"\A[ \t]*#[ \t]+([^\r\n]+)[ \t]*(?:\r?\n|\Z)")
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -76,6 +79,22 @@ def count_words(text: str) -> int:
     """
 
     return len(TOKEN_RE.findall(text))
+
+
+def manuscript_body(text: str) -> str:
+    """Return prose without YAML front matter or a duplicate Markdown title."""
+
+    body = FRONT_MATTER_RE.sub("", text, count=1).lstrip("\r\n")
+    body = MARKDOWN_TITLE_RE.sub("", body, count=1)
+    return body.lstrip("\r\n")
+
+
+def manuscript_title(text: str, fallback: str) -> str:
+    """Prefer the document's first H1 while keeping filename fallback support."""
+
+    without_front_matter = FRONT_MATTER_RE.sub("", text, count=1).lstrip("\r\n")
+    match = MARKDOWN_TITLE_RE.match(without_front_matter)
+    return match.group(1).strip() if match else fallback
 
 
 def chapter_number(value: str) -> int | None:
@@ -275,14 +294,16 @@ class ManuscriptStore:
         modified_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds")
         match = CHAPTER_NUMBER_RE.match(path.stem)
         number = chapter_number(match.group(1)) if match else None
+        fallback_title = re.sub(r"_+", " ", path.stem).strip()
+        body = manuscript_body(content)
         return {
             "filename": path.name,
             "name": path.name,
-            "title": re.sub(r"_+", " ", path.stem).strip(),
+            "title": manuscript_title(content, fallback_title),
             "extension": path.suffix.lower(),
             "size_bytes": len(data),
-            "character_count": len(content),
-            "word_count": count_words(content),
+            "character_count": len(body),
+            "word_count": count_words(body),
             "sha256": sha256_bytes(data),
             "modified_at": modified_at,
             "chapter_number": number,

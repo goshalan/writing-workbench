@@ -83,6 +83,12 @@ Compose 默认将服务发布到 <http://127.0.0.1:8000>，书稿保存在本地
 | `WRITING_WORKBENCH_MAX_REQUEST_BYTES` | `2097152` | 请求体字节上限 |
 | `WRITING_WORKBENCH_MAX_FILE_BYTES` | `1900000` | 单章字节上限 |
 | `WRITING_WORKBENCH_BACKUP_LIMIT` | `10` | 每章最多保留的备份数 |
+| `WRITING_WORKBENCH_CREATE_EXAMPLES` | `true` | 书稿目录为空时创建两章中性示例稿 |
+| `WRITING_WORKBENCH_BOOK_TITLE` | 根据目录推断 | 当前书稿的界面显示名称 |
+| `WRITING_WORKBENCH_TARGET_WORDS` | `80000` | 宿主工具台显示书稿进度时使用的目标字数 |
+| `WRITING_WORKBENCH_SUITE_HOME_URL` | 空 | 挂载到其他本地工具台时可选的返回链接 |
+| `WRITING_WORKBENCH_SUITE_HOME_LABEL` | `Back to local tools` | 可选返回链接的无障碍说明 |
+| `WRITING_WORKBENCH_SUITE_MARK` | `WW` | 可选返回链接内显示的短标识 |
 | `WRITING_WORKBENCH_AI_PROVIDER` | `hermes` | `hermes`、`mock` 或 `off` |
 | `WRITING_WORKBENCH_HERMES_COMMAND` | 从 `PATH` 自动发现 | 本机 Hermes 可执行文件 |
 | `WRITING_WORKBENCH_HERMES_PROFILE` | 空 | 可选的隔离 Hermes profile；留空时使用 Hermes 当前默认 profile |

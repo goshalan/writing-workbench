@@ -52,7 +52,7 @@ Common statuses:
 
 ### `GET /api/health`
 
-Returns process readiness and a chapter count without returning manuscript contents or exposing configuration secrets.
+Returns process readiness and manuscript summary metadata without returning manuscript contents or exposing configuration secrets.
 
 ```bash
 curl --fail http://127.0.0.1:8787/api/health
@@ -64,11 +64,14 @@ curl --fail http://127.0.0.1:8787/api/health
   "status": "healthy",
   "version": "0.1.0",
   "provider": "hermes",
-  "chapter_count": 2
+  "chapter_count": 2,
+  "book_title": "Writing Workbench",
+  "target_words": 80000,
+  "total_words": 157
 }
 ```
 
-The provider name is safe capability information. The Hermes executable, profile path, model, and filesystem paths are not returned.
+The provider name and aggregate manuscript fields are safe capability information. The Hermes executable, profile path, model, filesystem paths, and manuscript text are not returned.
 
 ## Chapters
 

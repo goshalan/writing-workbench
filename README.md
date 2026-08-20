@@ -83,6 +83,12 @@ The application reads configuration at startup. Secrets must be supplied through
 | `WRITING_WORKBENCH_MAX_REQUEST_BYTES` | `2097152` | Maximum request size in bytes |
 | `WRITING_WORKBENCH_MAX_FILE_BYTES` | `1900000` | Maximum chapter size in bytes |
 | `WRITING_WORKBENCH_BACKUP_LIMIT` | `10` | Maximum retained backups per chapter |
+| `WRITING_WORKBENCH_CREATE_EXAMPLES` | `true` | Create two neutral sample chapters when the manuscript directory is empty |
+| `WRITING_WORKBENCH_BOOK_TITLE` | inferred from the directory | Display name for the current manuscript |
+| `WRITING_WORKBENCH_TARGET_WORDS` | `80000` | Target used by host dashboards when displaying manuscript progress |
+| `WRITING_WORKBENCH_SUITE_HOME_URL` | empty | Optional back link when mounted inside another local dashboard |
+| `WRITING_WORKBENCH_SUITE_HOME_LABEL` | `Back to local tools` | Accessible label for the optional dashboard back link |
+| `WRITING_WORKBENCH_SUITE_MARK` | `WW` | Short mark shown inside the optional dashboard back link |
 | `WRITING_WORKBENCH_AI_PROVIDER` | `hermes` | `hermes`, `mock`, or `off` |
 | `WRITING_WORKBENCH_HERMES_COMMAND` | discovered from `PATH` | Local Hermes executable |
 | `WRITING_WORKBENCH_HERMES_PROFILE` | empty | Optional isolated local Hermes profile; empty uses Hermes' current default |
